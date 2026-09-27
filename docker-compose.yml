@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # 1. The PostgreSQL Database (Simulating Local Supabase)
+  db:
+    image: postgres:15-alpine
+    container_name: waypoint-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: waypoint_password
+      POSTGRES_DB: waypoint_logistics
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # 2. Node.js / Express API Backend
+  api-backend:
+    build: 
+      context: ./api-backend
+      dockerfile: Dockerfile
+    container_name: waypoint-api
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - DATABASE_URL=postgresql://postgres:waypoint_password@db:5432/waypoint_logistics
+    depends_on:
+      - db
+    volumes:
+      - ./api-backend:/app
+      - /app/node_modules
+
+  # 3. Next.js Web Portals (Dispatcher, Loader, Store Manager)
+  web-portals:
+    build:
+      context: ./web-portals
+      dockerfile: Dockerfile
+    container_name: waypoint-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:5000
+    depends_on:
+      - api-backend
+    volumes:
+      - ./web-portals:/app
+      - /app/node_modules
+      - /app/.next
+
+volumes:
+  pgdata:
