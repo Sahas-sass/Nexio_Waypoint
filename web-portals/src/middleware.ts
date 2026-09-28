@@ -66,6 +66,11 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse;
   }
 
+  // Allow direct preview for prototype testing if ?preview=true or ?demo=true
+  if (url.searchParams.get('preview') === 'true' || url.searchParams.get('demo') === 'true') {
+    return supabaseResponse;
+  }
+
   // 6. If no user is logged in for any other route, kick them to login
   if (!user) {
     url.pathname = '/login';
