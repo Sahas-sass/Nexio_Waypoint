@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+@theme {
+  --color-waypoint-yellow: #FFC83D;
+  --color-waypoint-orange: #F59E0B;
+  --color-waypoint-bg: #FAFAF7;
+  --color-waypoint-text: #202124;
+  --color-waypoint-secondary: #6B7280;
+  --color-waypoint-success: #22C55E;
+  --color-waypoint-chilled: #8DD8F7;
+  
+  --font-sans: var(--font-manrope), sans-serif;
+}
+
+/* Force light mode globally to prevent system dark-theme overrides */
+:root {
+  color-scheme: light;
+}

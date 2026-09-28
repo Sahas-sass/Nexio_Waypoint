@@ -1,0 +1,1 @@
+// Pending synchronization queue state.
