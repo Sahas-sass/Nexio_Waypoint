@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, Animated, Dimensions, Easing } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { router } from 'expo-router';
 
 const { width, height } = Dimensions.get('window');
 
@@ -16,7 +17,13 @@ export default function LoadingScreen() {
       duration: 2500,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
-    }).start();
+    }).start(({ finished }) => {
+      if (finished) {
+        setTimeout(() => {
+          router.replace('/(auth)/login');
+        }, 300);
+      }
+    });
 
     // Pulse animation for the green dot
     Animated.loop(
