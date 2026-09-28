@@ -14,63 +14,79 @@ export default function DispatcherLayout({ children }: { children: React.ReactNo
     { name: "Deferrals", href: "/deferrals", icon: Clock },
   ];
 
-  const bottomNavItems = [
-    { name: "Alerts", href: "/alerts", icon: Bell },
-    { name: "Settings", href: "/settings", icon: Settings },
-  ];
-
   return (
     <div className="min-h-screen bg-waypoint-bg flex">
-      {/* Slim Icon-Based Sidebar */}
-      <aside className="w-24 bg-white border-r border-gray-200 flex flex-col items-center py-6 fixed h-full z-20">
-        {/* Logo */}
-        <div className="w-10 h-10 bg-gray-900 rounded-xl flex items-center justify-center mb-8 relative">
-          <div className="w-3 h-3 bg-waypoint-yellow rounded-full absolute bottom-2 right-2" />
-          <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
-            <path d="M22 10L16 22L10 10H22Z" fill="#FFC83D"/>
-          </svg>
-        </div>
+      {/* Sidebar with canonical Tailwind sizing */}
+      <aside 
+        className="fixed top-0 left-0 h-screen w-23 pt-5.5 pb-4.5 px-2.5 flex flex-col items-center bg-white/92 backdrop-blur-[18px] border-r-[1.6px] border-[#E8E8E3] z-20"
+      >
+        {/* Top Logo / App Icon */}
+        <Link href="/command-center" className="mb-8 shrink-0 flex items-center justify-center hover:opacity-80 transition-opacity">
+          <img src="/logo.png" alt="Waypoint Logo" className="w-11 h-11 object-contain" />
+        </Link>
 
-        {/* Main Nav */}
-        <nav className="flex-1 w-full flex flex-col items-center gap-6 mt-4">
+        {/* Main Navigation */}
+        <nav className="flex-1 w-full flex flex-col items-center gap-3">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             const Icon = item.icon;
+            
             return (
-              <Link key={item.name} href={item.href} className="flex flex-col items-center gap-1 group w-full">
-                <div className={`p-3 rounded-xl transition-colors ${isActive ? 'bg-yellow-50 text-waypoint-orange' : 'text-gray-400 group-hover:bg-gray-50 group-hover:text-gray-600'}`}>
-                  <Icon className="w-6 h-6" strokeWidth={isActive ? 2.5 : 2} />
-                </div>
-                <span className={`text-[10px] font-bold tracking-wide ${isActive ? 'text-waypoint-orange' : 'text-gray-400'}`}>
-                  {item.name}
-                </span>
-              </Link>
+              <div key={item.name} className="relative w-full flex justify-center">
+                {/* Active Left Indicator Bar */}
+                {isActive && (
+                  <div className="absolute -left-2.5 top-1/2 -translate-y-1/2 w-0.75 h-6 bg-waypoint-yellow rounded-r-md" />
+                )}
+                
+                <Link 
+                  href={item.href} 
+                  className={`flex flex-col items-center justify-center gap-1.5 w-16 h-16 rounded-2xl transition-colors ${
+                    isActive 
+                      ? 'bg-[#FFF6D8] text-waypoint-text' 
+                      : 'text-waypoint-secondary hover:bg-gray-50'
+                  }`}
+                >
+                  <Icon className="w-5.5 h-5.5" strokeWidth={isActive ? 2 : 1.5} />
+                  <span className={`text-[10px] font-medium tracking-tight ${isActive ? 'font-semibold' : ''}`}>
+                    {item.name}
+                  </span>
+                </Link>
+              </div>
             );
           })}
         </nav>
 
-        {/* Bottom Nav & Profile */}
-        <div className="w-full flex flex-col items-center gap-6 mt-auto">
-          {bottomNavItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link key={item.name} href={item.href} className="flex flex-col items-center gap-1 group w-full">
-                <div className="p-2 text-gray-400 group-hover:bg-gray-50 rounded-xl transition-colors">
-                  <Icon className="w-6 h-6" strokeWidth={2} />
-                </div>
-                <span className="text-[10px] font-bold text-gray-400 tracking-wide">{item.name}</span>
-              </Link>
-            );
-          })}
+        {/* Bottom Actions & Profile */}
+        <div className="w-full flex flex-col items-center gap-4 mt-auto shrink-0">
+          {/* Alerts */}
+          <button className="flex flex-col items-center gap-1.5 text-waypoint-secondary hover:text-waypoint-text transition-colors group">
+            <div className="relative p-1">
+              <Bell className="w-5.5 h-5.5" strokeWidth={1.5} />
+              {/* Orange Notification Dot */}
+              <div className="absolute top-1 right-1.5 w-1.5 h-1.5 bg-waypoint-orange rounded-full border border-white" />
+            </div>
+            <span className="text-[10px] font-medium tracking-tight group-hover:font-semibold">Alerts</span>
+          </button>
+
+          {/* Settings */}
+          <button className="flex flex-col items-center gap-1.5 text-waypoint-secondary hover:text-waypoint-text transition-colors group">
+            <div className="p-1">
+              <Settings className="w-5.5 h-5.5" strokeWidth={1.5} />
+            </div>
+            <span className="text-[10px] font-medium tracking-tight group-hover:font-semibold">Settings</span>
+          </button>
           
-          <div className="mt-4 w-10 h-10 bg-gray-900 rounded-xl flex items-center justify-center text-white font-bold text-sm cursor-pointer shadow-sm">
+          {/* Profile Identity */}
+          <div className="mt-2 w-11.5 h-11.5 bg-waypoint-text rounded-2xl flex items-center justify-center text-white font-semibold text-[13px] cursor-pointer shadow-sm relative">
             KS
+            {/* Green Online Status Dot */}
+            <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-waypoint-success rounded-full border-2 border-white" />
           </div>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 ml-24 p-8">
+      <main className="flex-1 ml-23 p-8">
         {children}
       </main>
     </div>
