@@ -44,7 +44,7 @@ export default function LoginScreen() {
       if (error) {
         Alert.alert('Login Failed', error.message);
       } else {
-        Alert.alert('Success', 'Logged in successfully!');
+        router.replace('/(tabs)/route');
       }
     } catch (err: any) {
       Alert.alert('Error', err.message);

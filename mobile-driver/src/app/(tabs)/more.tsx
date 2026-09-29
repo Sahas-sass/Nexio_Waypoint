@@ -1,9 +1,9 @@
 import { View, Text } from 'react-native';
 
-export default function HistoryScreen() {
+export default function MoreScreen() {
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-      <Text>History Screen</Text>
+      <Text>More Screen</Text>
     </View>
   );
 }
