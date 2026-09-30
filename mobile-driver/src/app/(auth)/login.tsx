@@ -3,22 +3,59 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/waypoint/icon';
 import { Button, Eyebrow, PageTitle, StatusDot, WText } from '@/components/waypoint/ui';
 import { font, Radius, W } from '@/utils/theme';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
-  const [driverId, setDriverId] = useState('D-1084');
-  const [pin, setPin] = useState('2486');
+  const [driverId, setDriverId] = useState('driver');
+  const [pin, setPin] = useState('248600');
   const [showPin, setShowPin] = useState(false);
   const [remember, setRemember] = useState(true);
   const [focused, setFocused] = useState<'id' | 'pin' | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const signIn = () => router.replace('/route');
+  const signIn = async () => {
+    if (!driverId || !pin) {
+      Alert.alert('Error', 'Please enter your Driver ID or Mobile Number, and your PIN.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const normalizedInput = driverId.replace(/[-()\s]/g, '');
+      const isMobile = /^\+?[0-9]{10,15}$/.test(normalizedInput);
+      
+      let result;
+      if (isMobile) {
+        result = await supabase.auth.signInWithPassword({
+          phone: normalizedInput,
+          password: pin,
+        });
+      } else {
+        const email = `${driverId.toLowerCase().trim()}@waypoint.com`;
+        result = await supabase.auth.signInWithPassword({
+          email,
+          password: pin,
+        });
+      }
+
+      if (result.error) {
+        Alert.alert('Sign In Failed', result.error.message);
+      } else {
+        router.replace('/route');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'An unexpected error occurred during sign in.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -91,7 +128,7 @@ export default function LoginScreen() {
                 Secure PIN
               </WText>
               <WText size={8} weight={600} color={W.gray}>
-                4 digits
+                6 digits
               </WText>
             </View>
             <View style={[styles.input, focused === 'pin' && styles.inputFocused]}>
@@ -101,7 +138,7 @@ export default function LoginScreen() {
                 onChangeText={setPin}
                 secureTextEntry={!showPin}
                 keyboardType="number-pad"
-                maxLength={4}
+                maxLength={6}
                 autoComplete="current-password"
                 accessibilityLabel="Secure PIN"
                 onFocus={() => setFocused('pin')}
@@ -137,8 +174,8 @@ export default function LoginScreen() {
             </Pressable>
           </View>
 
-          <Button onPress={signIn} trailingIcon="chevron">
-            Sign in to Waypoint
+          <Button onPress={signIn} trailingIcon="chevron" disabled={loading}>
+            {loading ? 'Signing in...' : 'Sign in to Waypoint'}
           </Button>
 
           <View style={styles.secure}>
