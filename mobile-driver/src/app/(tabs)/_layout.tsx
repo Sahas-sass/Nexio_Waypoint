@@ -9,7 +9,7 @@ export default function TabsLayout() {
     <Tabs
       tabBar={(props) => <BottomNav {...props} />}
       screenOptions={{
-        header: () => <AppHeader online onStatus={() => router.push('/offline')} />,
+        header: () => <AppHeader onStatus={() => router.push('/offline')} />,
         sceneStyle: { backgroundColor: W.offWhite },
       }}>
       <Tabs.Screen name="route" />

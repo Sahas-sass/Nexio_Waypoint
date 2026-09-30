@@ -1,17 +1,51 @@
 import type { BottomTabBarProps } from 'expo-router/tabs';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+  type RefreshControlProps,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, type IconName } from '@/components/waypoint/icon';
 import { StatusDot, WText } from '@/components/waypoint/ui';
 import { driver } from '@/data/mock';
+import { useQueueStore } from '@/store/queueStore';
 import { W } from '@/utils/theme';
 
-export function AppHeader({ online, onStatus }: { online: boolean; onStatus: () => void }) {
+export function getFormattedHeaderDate(): string {
+  const now = new Date();
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  const dayName = days[now.getDay()];
+  const dateNumber = now.getDate();
+  const monthName = months[now.getMonth()];
+
+  return `${dayName}, ${dateNumber} ${monthName}`;
+}
+
+export function AppHeader({
+  online,
+  onStatus,
+}: {
+  online?: boolean;
+  onStatus: () => void;
+}) {
+  const storeOnline = useQueueStore((state) => state.isOnline);
+  const isOnline = online !== undefined ? online : storeOnline;
   const insets = useSafeAreaInsets();
-  const statusColor = online ? W.greenDark : '#a85d00';
+  const statusColor = isOnline ? W.greenDark : '#a85d00';
+  const currentDate = getFormattedHeaderDate();
+
   return (
     <View style={[styles.header, { paddingTop: insets.top + 12, height: insets.top + 72 }]}>
       <LinearGradient
@@ -27,17 +61,17 @@ export function AppHeader({ online, onStatus }: { online: boolean; onStatus: () 
           Today&apos;s Route
         </WText>
         <WText size={10} weight={600} color={W.gray} style={{ marginTop: 2 }}>
-          {driver.dateLabel}
+          {currentDate}
         </WText>
       </View>
       <Pressable
         onPress={onStatus}
         accessibilityRole="button"
         accessibilityLabel="Open connection status"
-        style={[styles.statusPill, { backgroundColor: online ? W.greenSoft : W.orangeSoft }]}>
+        style={[styles.statusPill, { backgroundColor: isOnline ? W.greenSoft : W.orangeSoft }]}>
         <StatusDot color={statusColor} />
         <WText size={11} weight={800} color={statusColor}>
-          {online ? 'Online' : 'Offline'}
+          {isOnline ? 'Online' : 'Offline'}
         </WText>
       </Pressable>
     </View>
@@ -90,18 +124,21 @@ export function Screen({
   footer,
   background,
   contentStyle,
+  refreshControl,
 }: {
   children: ReactNode;
   footer?: ReactNode;
   background?: ReactNode;
   contentStyle?: StyleProp<ViewStyle>;
+  refreshControl?: React.ReactElement<RefreshControlProps>;
 }) {
   return (
     <View style={styles.screen}>
       {background}
       <ScrollView
         contentContainerStyle={[styles.content, footer ? { paddingBottom: 116 } : null, contentStyle]}
-        keyboardShouldPersistTaps="handled">
+        keyboardShouldPersistTaps="handled"
+        refreshControl={refreshControl}>
         {children}
       </ScrollView>
       {footer && <View style={styles.footer}>{footer}</View>}
