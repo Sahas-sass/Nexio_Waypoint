@@ -38,7 +38,7 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const url = request.nextUrl;
+  const url = request.nextUrl.clone();
   const path = url.pathname;
 
   // 4. Helper function to route users to their specific home pages
@@ -85,6 +85,11 @@ export async function middleware(request: NextRequest) {
   const isDispatcherRoute = path.startsWith('/command-center') || path.startsWith('/allocation') || path.startsWith('/deferrals');
   const isLoaderRoute = path.startsWith('/trip-queue');
   const isManagerRoute = path.startsWith('/overview') || path.startsWith('/orders') || path.startsWith('/receiving') || path.startsWith('/alerts') || path.startsWith('/history');
+
+  // Redirect root to dashboard
+  if (path === '/') {
+    return NextResponse.redirect(new URL(getRoleDashboard(role), request.url));
+  }
 
   // 9. Execute Role-Based Access Control (RBAC) Bouncers
   if (isDispatcherRoute && role !== 'dispatcher') {
