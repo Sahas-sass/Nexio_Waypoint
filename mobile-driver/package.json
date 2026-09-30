@@ -3,11 +3,8 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
-<<<<<<< HEAD
-    "@expo/ngrok": "^4.1.0",
-=======
     "@expo-google-fonts/manrope": "^0.4.2",
->>>>>>> 10224c9e5f222ab3ec148e0a616311123a47a101
+    "@expo/ngrok": "^4.1.0",
     "@expo/ui": "~57.0.20",
     "@expo/vector-icons": "^15.1.1",
     "@supabase/supabase-js": "^2.117.2",
@@ -38,10 +35,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
-<<<<<<< HEAD
-=======
     "@types/react-native": "^0.72.8",
->>>>>>> 10224c9e5f222ab3ec148e0a616311123a47a101
     "eslint": "^9.0.0",
     "eslint-config-expo": "~57.0.2",
     "typescript": "~6.0.3"
