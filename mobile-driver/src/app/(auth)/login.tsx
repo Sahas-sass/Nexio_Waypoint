@@ -2,39 +2,58 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/waypoint/icon';
-import { useQueueStore } from '@/store/queueStore';
-import { Colors, font, Radius, Shadow, W } from '@/utils/theme';
+import { Button, Eyebrow, PageTitle, StatusDot, WText } from '@/components/waypoint/ui';
+import { font, Radius, W } from '@/utils/theme';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
-  const isOnline = useQueueStore((state) => state.isOnline);
-
-  const [driverId, setDriverId] = useState('D-1084');
-  const [pin, setPin] = useState('2486');
+  const [driverId, setDriverId] = useState('driver');
+  const [pin, setPin] = useState('248600');
   const [showPin, setShowPin] = useState(false);
-  const [rememberDevice, setRememberDevice] = useState(true);
-  const [focusedInput, setFocusedInput] = useState<'id' | 'pin' | null>(null);
+  const [remember, setRemember] = useState(true);
+  const [focused, setFocused] = useState<'id' | 'pin' | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleSignIn = () => {
-    // Synchronize driver and vehicle in state store
-    const { setDriverName, setCurrentVehicle } = useQueueStore.getState();
-    setDriverName('Kasun Perera');
-    setCurrentVehicle('TRK-024');
+  const signIn = async () => {
+    if (!driverId || !pin) {
+      Alert.alert('Error', 'Please enter your Driver ID or Mobile Number, and your PIN.');
+      return;
+    }
 
-    router.replace('/route');
+    setLoading(true);
+    try {
+      const normalizedInput = driverId.replace(/[-()\s]/g, '');
+      const isMobile = /^\+?[0-9]{10,15}$/.test(normalizedInput);
+      
+      let result;
+      if (isMobile) {
+        result = await supabase.auth.signInWithPassword({
+          phone: normalizedInput,
+          password: pin,
+        });
+      } else {
+        const email = `${driverId.toLowerCase().trim()}@waypoint.com`;
+        result = await supabase.auth.signInWithPassword({
+          email,
+          password: pin,
+        });
+      }
+
+      if (result.error) {
+        Alert.alert('Sign In Failed', result.error.message);
+      } else {
+        router.replace('/route');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'An unexpected error occurred during sign in.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -114,11 +133,14 @@ export default function LoginScreen() {
             </View>
           </View>
 
-          {/* Input 2: Secure PIN */}
-          <View style={styles.fieldContainer}>
-            <View style={styles.fieldLabelRow}>
-              <Text style={styles.fieldLabel}>Secure PIN</Text>
-              <Text style={styles.pinHint}>4 digits</Text>
+          <View style={styles.field}>
+            <View style={styles.labelRow}>
+              <WText size={9} weight={800} color="#4f5154">
+                Secure PIN
+              </WText>
+              <WText size={8} weight={600} color={W.gray}>
+                6 digits
+              </WText>
             </View>
             <View
               style={[
@@ -131,7 +153,7 @@ export default function LoginScreen() {
                 onChangeText={setPin}
                 secureTextEntry={!showPin}
                 keyboardType="number-pad"
-                maxLength={4}
+                maxLength={6}
                 autoComplete="current-password"
                 accessibilityLabel="Secure PIN"
                 onFocus={() => setFocusedInput('pin')}
@@ -170,18 +192,9 @@ export default function LoginScreen() {
             </Pressable>
           </View>
 
-          {/* Primary Action Button */}
-          <Pressable
-            onPress={handleSignIn}
-            accessibilityRole="button"
-            accessibilityLabel="Sign in to Waypoint"
-            style={({ pressed }) => [
-              styles.primaryButton,
-              pressed && styles.primaryButtonPressed,
-            ]}>
-            <Text style={styles.primaryButtonText}>Sign in to Waypoint</Text>
-            <Icon name="chevron" size={18} color={Colors.textPrimary} />
-          </Pressable>
+          <Button onPress={signIn} trailingIcon="chevron" disabled={loading}>
+            {loading ? 'Signing in...' : 'Sign in to Waypoint'}
+          </Button>
 
           {/* Trust Badge */}
           <View style={styles.trustBadge}>
