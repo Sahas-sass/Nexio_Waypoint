@@ -264,17 +264,6 @@ export default function LoginPage() {
                   Manager
                 </button>
               </div>
-
-              {/* Direct Tablet Prototype Jump */}
-              <div className="mt-4 pt-3 border-t border-gray-100 flex justify-center">
-                <a
-                  href="/trip-queue?preview=true"
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-waypoint-orange hover:text-amber-600 bg-yellow-50 hover:bg-yellow-100/80 px-3.5 py-1.5 rounded-full transition-colors"
-                >
-                  <span>⚡ Directly Launch Loader Tablet Prototype</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </a>
-              </div>
             </div>
 
           </form>
