@@ -93,7 +93,7 @@ function TripQueueContent() {
     reasonCode: "CARTON_DAMAGED" | "LEAKAGE_DETECTED" | "TEMPERATURE_EXCURSION" | "MISSING_FROM_STAGING" | "OTHER";
     notes: string;
   }) => {
-    await submitException(selectedTrip, data);
+    await submitException(selectedTrip, data, profile?.id);
   };
 
   const handleConfirmSealAndDispatch = async (data: {

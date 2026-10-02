@@ -24,6 +24,7 @@ import {
 import { useUserProfile } from "./useUserProfile";
 import { UserRole, UserActivity } from "./types";
 import { getRoleConfig } from "./roleConfig";
+import { formatActivityTime } from "./activityLogger";
 
 export default function UserProfileCard() {
   const { profile, loading, uploadAvatar, updateProfile, logout, refetch } = useUserProfile();
@@ -345,32 +346,38 @@ export default function UserProfileCard() {
               </span>
             </div>
 
-            <div className="divide-y divide-gray-100">
-              {activities.map((item, idx) => {
-                const IconComponent = 
-                  item.type === "check" ? Check : item.type === "bag" ? ShoppingBag : Truck;
-                return (
-                  <div key={idx} className="py-3.5 first:pt-2 last:pb-1 flex items-center gap-3.5">
-                    <div className="w-9 h-9 rounded-xl bg-[#FFF9E6] text-[#F59E0B] flex items-center justify-center shrink-0">
-                      <IconComponent className="w-4.5 h-4.5" />
-                    </div>
+            {activities.length > 0 ? (
+              <div className="divide-y divide-gray-100">
+                {activities.map((item, idx) => {
+                  const IconComponent = 
+                    item.type === "check" ? Check : item.type === "bag" ? ShoppingBag : Truck;
+                  return (
+                    <div key={idx} className="py-3.5 first:pt-2 last:pb-1 flex items-center gap-3.5">
+                      <div className="w-9 h-9 rounded-xl bg-[#FFF9E6] text-[#F59E0B] flex items-center justify-center shrink-0">
+                        <IconComponent className="w-4.5 h-4.5" />
+                      </div>
 
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold text-gray-900">
-                        {item.title}
-                      </p>
-                      <p className="text-[11px] text-gray-500">
-                        {item.meta}
-                      </p>
-                    </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-gray-900">
+                          {item.title}
+                        </p>
+                        <p className="text-[11px] text-gray-500">
+                          {item.meta}
+                        </p>
+                      </div>
 
-                    <span className="text-[11px] text-gray-400 font-medium shrink-0">
-                      {item.time}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+                      <span className="text-[11px] text-gray-400 font-medium shrink-0">
+                        {formatActivityTime(item.time)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="py-8 text-center text-xs text-gray-400 font-medium">
+                No shift activities recorded yet. Actions will appear here in real-time.
+              </div>
+            )}
           </div>
         </div>
 

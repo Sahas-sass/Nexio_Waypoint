@@ -169,19 +169,21 @@ export async function fetchCurrentUserProfile(): Promise<UserProfile> {
 
   // Dynamically fetch live recent activities from real database operations
   let activities: UserActivity[] = [];
-  try {
-    activities = await fetchRecentUserActivities(role, user.id);
-  } catch {
-    activities = Array.isArray(profile?.activities) && profile.activities.length > 0
-      ? profile.activities
-      : [
-          {
-            title: "Account active",
-            meta: "Session authenticated",
-            time: "Just now",
-            type: "check",
-          },
-        ];
+  if (Array.isArray(profile?.activities) && profile.activities.length > 0) {
+    activities = profile.activities;
+  } else {
+    try {
+      activities = await fetchRecentUserActivities(role, user.id);
+    } catch {
+      activities = [
+        {
+          title: "Account active",
+          meta: "Session authenticated",
+          time: "Just now",
+          type: "check",
+        },
+      ];
+    }
   }
 
   return {

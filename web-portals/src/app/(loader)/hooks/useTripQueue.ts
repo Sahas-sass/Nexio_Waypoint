@@ -11,6 +11,7 @@ import {
   createPalletException,
 } from "../services/loaderService";
 import { playScannerSound, triggerHapticFeedback } from "../utils/scannerFeedback";
+import { recordUserActivity } from "@/app/profile/activityLogger";
 
 export function useTripQueue(initialSelectedTripId?: string) {
   const [trips, setTrips] = useState<TripVehicle[]>([]);
@@ -105,6 +106,13 @@ export function useTripQueue(initialSelectedTripId?: string) {
 
     try {
       await updatePalletVerification(palletId, newStatus, profileId);
+      if (newStatus && profileId && targetPallet) {
+        recordUserActivity(profileId, {
+          title: `Verified Pallet ${targetPallet.sku}`,
+          meta: `${targetPallet.name} • ${trip.tripNumber}`,
+          type: "check",
+        });
+      }
     } catch {
       // Revert on error
       loadDatabaseData();
@@ -150,7 +158,8 @@ export function useTripQueue(initialSelectedTripId?: string) {
       storeId?: string;
       reasonCode: "CARTON_DAMAGED" | "LEAKAGE_DETECTED" | "TEMPERATURE_EXCURSION" | "MISSING_FROM_STAGING" | "OTHER";
       notes: string;
-    }
+    },
+    userId?: string
   ) => {
     if (!trip) return;
 
@@ -162,6 +171,14 @@ export function useTripQueue(initialSelectedTripId?: string) {
         actionTaken: data.notes,
         palletSku: data.palletSku,
       });
+
+      if (userId) {
+        recordUserActivity(userId, {
+          title: `Reported Issue: ${data.reasonCode.replace(/_/g, " ")}`,
+          meta: `${data.palletSku || trip.tripNumber} • ${data.notes}`,
+          type: "check",
+        });
+      }
 
       // Update trip state to record exception note
       setTrips((prev) =>
@@ -209,6 +226,15 @@ export function useTripQueue(initialSelectedTripId?: string) {
         tempCheck: data.tempCheck,
         userId,
       });
+
+      if (userId) {
+        const palletsCount = trip.stops.flatMap((s) => s.pallets).length;
+        recordUserActivity(userId, {
+          title: `Dispatched ${trip.tripNumber} (${trip.plateNumber})`,
+          meta: `${palletsCount} pallets • Seal ${data.sealNumber}`,
+          type: "truck",
+        });
+      }
 
       setPastLogs((prev) => [logEntry, ...prev]);
       triggerToast(`Truck ${trip.plateNumber} sealed with ${data.sealNumber} and dispatched!`);
