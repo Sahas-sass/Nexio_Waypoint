@@ -23,7 +23,7 @@ export default function ProfilePage() {
   if (loading && !profile) {
     return (
       <div className="min-h-screen bg-[#F8F8F5] flex flex-col items-center justify-center p-6">
-        <Loader2 className="w-9 h-9 text-[#F59E0B] animate-spin mb-3" />
+        <Loader2 className="w-9 h-9 text-waypoint-orange animate-spin mb-3" />
         <p className="text-sm font-bold text-gray-700">Loading user profile...</p>
       </div>
     );

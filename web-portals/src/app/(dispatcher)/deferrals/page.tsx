@@ -152,7 +152,7 @@ export default function DeferralManagerPage() {
   };
 
   return (
-    <div className="max-w-[1440px] mx-auto space-y-6 pb-28 relative">
+    <div className="max-w-360 mx-auto space-y-6 pb-28 relative">
       
       {/* Toast Notification Alert */}
       {confirmedNotification && (
@@ -219,7 +219,7 @@ export default function DeferralManagerPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
         {/* Card 1: Orders Affected */}
-        <div className="p-5 rounded-[22px] border border-[#E8E8E3]/80 bg-white shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] flex flex-col justify-between min-h-[126px]">
+        <div className="p-5 rounded-[22px] border border-[#E8E8E3]/80 bg-white shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] flex flex-col justify-between min-h-31.5">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[#FFF8E6] text-amber-600 flex items-center justify-center shrink-0">
               <Package className="w-5 h-5" strokeWidth={2} />
@@ -236,7 +236,7 @@ export default function DeferralManagerPage() {
         </div>
 
         {/* Card 2: Capacity Shortfall */}
-        <div className="p-5 rounded-[22px] border border-[#E8E8E3]/80 bg-white shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] flex flex-col justify-between min-h-[126px]">
+        <div className="p-5 rounded-[22px] border border-[#E8E8E3]/80 bg-white shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] flex flex-col justify-between min-h-31.5">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[#FFF8E6] text-amber-600 flex items-center justify-center shrink-0">
               <BarChart3 className="w-5 h-5" strokeWidth={2} />
@@ -253,7 +253,7 @@ export default function DeferralManagerPage() {
         </div>
 
         {/* Card 3: Estimated Impact */}
-        <div className="p-5 rounded-[22px] border border-[#E8E8E3]/80 bg-white shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] flex flex-col justify-between min-h-[126px]">
+        <div className="p-5 rounded-[22px] border border-[#E8E8E3]/80 bg-white shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] flex flex-col justify-between min-h-31.5">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] text-blue-500 flex items-center justify-center shrink-0">
               <MapPin className="w-5 h-5" strokeWidth={2} />
@@ -344,7 +344,7 @@ export default function DeferralManagerPage() {
                               : "border-gray-300 bg-white"
                           }`}
                         >
-                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                          {isSelected && <Check className="w-3 h-3 stroke-3" />}
                         </div>
                       </td>
 
@@ -505,7 +505,7 @@ export default function DeferralManagerPage() {
             </div>
 
             {/* Auto notification helper note */}
-            <div className="hidden lg:flex items-center gap-1.5 text-[10px] text-gray-400 max-w-[130px] leading-tight">
+            <div className="hidden lg:flex items-center gap-1.5 text-[10px] text-gray-400 max-w-32.5 leading-tight">
               <Bell className="w-3 h-3 text-gray-400 shrink-0" />
               <span>Store managers will be notified automatically.</span>
             </div>

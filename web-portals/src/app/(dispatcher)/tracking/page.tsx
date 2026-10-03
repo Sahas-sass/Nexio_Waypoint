@@ -153,7 +153,7 @@ export default function LiveTrackingPage() {
   const exceptionCount = kpis?.connectivityIssues ?? vehicles.filter(v => v.status === "connectivity-issue").length;
 
   return (
-    <div className="max-w-[1440px] mx-auto space-y-6">
+    <div className="max-w-360 mx-auto space-y-6">
       
       {/* 1. TOP HEADER SECTION */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -217,7 +217,7 @@ export default function LiveTrackingPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         
         {/* Card 1: Active Vehicles */}
-        <div className="p-5 rounded-[22px] border border-[#E8E8E3]/80 bg-white shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] flex flex-col justify-between min-h-[126px]">
+        <div className="p-5 rounded-[22px] border border-[#E8E8E3]/80 bg-white shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] flex flex-col justify-between min-h-31.5">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[#FFF8E6] text-amber-600 flex items-center justify-center shrink-0">
               <Truck className="w-5 h-5" strokeWidth={2} />
@@ -236,7 +236,7 @@ export default function LiveTrackingPage() {
         </div>
 
         {/* Card 2: On Schedule */}
-        <div className="p-5 rounded-[22px] border border-[#E8E8E3]/80 bg-white shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] flex flex-col justify-between min-h-[126px]">
+        <div className="p-5 rounded-[22px] border border-[#E8E8E3]/80 bg-white shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] flex flex-col justify-between min-h-31.5">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[#ECFDF5] text-emerald-600 flex items-center justify-center shrink-0">
               <Check className="w-5 h-5" strokeWidth={2.5} />
@@ -255,7 +255,7 @@ export default function LiveTrackingPage() {
         </div>
 
         {/* Card 3: Delayed */}
-        <div className="p-5 rounded-[22px] border border-[#E8E8E3]/80 bg-white shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] flex flex-col justify-between min-h-[126px]">
+        <div className="p-5 rounded-[22px] border border-[#E8E8E3]/80 bg-white shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] flex flex-col justify-between min-h-31.5">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[#FFF8E6] text-amber-600 flex items-center justify-center shrink-0">
               <Clock className="w-5 h-5" strokeWidth={2} />
@@ -274,7 +274,7 @@ export default function LiveTrackingPage() {
         </div>
 
         {/* Card 4: Connectivity Issues */}
-        <div className="p-5 rounded-[22px] border border-[#E8E8E3]/80 bg-white shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] flex flex-col justify-between min-h-[126px]">
+        <div className="p-5 rounded-[22px] border border-[#E8E8E3]/80 bg-white shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] flex flex-col justify-between min-h-31.5">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] text-blue-500 flex items-center justify-center shrink-0">
               <Wifi className="w-5 h-5" strokeWidth={2} />
@@ -298,7 +298,7 @@ export default function LiveTrackingPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
         
         {/* MAP CONTAINER (8 COLS) */}
-        <div className="lg:col-span-8 relative rounded-3xl overflow-hidden border border-[#E8E8E3]/90 bg-[#F1F3EC] shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] min-h-[500px] flex flex-col justify-between p-6 select-none">
+        <div className="lg:col-span-8 relative rounded-3xl overflow-hidden border border-[#E8E8E3]/90 bg-[#F1F3EC] shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] min-h-125 flex flex-col justify-between p-6 select-none">
           
           {/* Top Controls: Filter Pills (Left) & Zoom Controls (Right) */}
           <div className="relative z-10 flex items-center justify-between pointer-events-auto">
@@ -308,7 +308,7 @@ export default function LiveTrackingPage() {
                 onClick={() => setActiveTab("all")}
                 className={`px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all ${
                   activeTab === "all"
-                    ? "bg-[#202124] text-white shadow-sm"
+                    ? "bg-waypoint-text text-white shadow-sm"
                     : "bg-white/80 backdrop-blur-xs hover:bg-white text-gray-600 border border-gray-200/70"
                 }`}
               >
@@ -319,7 +319,7 @@ export default function LiveTrackingPage() {
                 onClick={() => setActiveTab("on-route")}
                 className={`px-3.5 py-1.5 rounded-xl font-semibold text-xs transition-all ${
                   activeTab === "on-route"
-                    ? "bg-[#202124] text-white shadow-sm"
+                    ? "bg-waypoint-text text-white shadow-sm"
                     : "bg-white/80 backdrop-blur-xs hover:bg-white text-gray-600 border border-gray-200/70"
                 }`}
               >
@@ -330,7 +330,7 @@ export default function LiveTrackingPage() {
                 onClick={() => setActiveTab("delayed")}
                 className={`px-3 py-1.5 rounded-xl font-semibold text-xs flex items-center gap-1.5 transition-all ${
                   activeTab === "delayed"
-                    ? "bg-[#202124] text-white shadow-sm"
+                    ? "bg-waypoint-text text-white shadow-sm"
                     : "bg-white/80 backdrop-blur-xs hover:bg-white text-gray-600 border border-gray-200/70"
                 }`}
               >
@@ -346,7 +346,7 @@ export default function LiveTrackingPage() {
                 onClick={() => setActiveTab("exceptions")}
                 className={`px-3 py-1.5 rounded-xl font-semibold text-xs flex items-center gap-1.5 transition-all ${
                   activeTab === "exceptions"
-                    ? "bg-[#202124] text-white shadow-sm"
+                    ? "bg-waypoint-text text-white shadow-sm"
                     : "bg-white/80 backdrop-blur-xs hover:bg-white text-gray-600 border border-gray-200/70"
                 }`}
               >
@@ -667,7 +667,7 @@ export default function LiveTrackingPage() {
             </div>
 
             {/* Vehicle Cards List */}
-            <div className="flex flex-col gap-3 max-h-[380px] overflow-y-auto pr-1">
+            <div className="flex flex-col gap-3 max-h-95 overflow-y-auto pr-1">
               {filteredVehicles.map((vehicle) => {
                 const isSelected = selectedVehicleId === vehicle.id;
                 

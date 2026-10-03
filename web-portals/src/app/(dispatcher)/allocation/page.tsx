@@ -262,7 +262,7 @@ export default function AllocationPage() {
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 overflow-y-auto pr-1 max-h-[620px]">
+          <div className="flex flex-col gap-3 overflow-y-auto pr-1 max-h-155">
             {loading ? (
               <div className="py-16 flex items-center justify-center gap-2 text-gray-400">
                 <Loader2 className="w-5 h-5 animate-spin text-waypoint-orange" />
@@ -330,7 +330,7 @@ export default function AllocationPage() {
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 overflow-y-auto max-h-[620px]">
+          <div className="flex flex-col gap-3 overflow-y-auto max-h-155">
             {loading ? (
               <div className="py-16 flex items-center justify-center gap-2 text-gray-400">
                 <Loader2 className="w-5 h-5 animate-spin text-waypoint-orange" />

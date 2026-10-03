@@ -326,7 +326,7 @@ export default function CommandCenterPage() {
                     />
                     <div className="flex flex-col pt-0.5">
                       <span className="text-[14px] font-bold text-waypoint-text leading-tight">{veh.plate}</span>
-                      <span className="text-[12px] font-medium text-gray-400 mt-0.5 truncate max-w-[130px]">{veh.model}</span>
+                      <span className="text-[12px] font-medium text-gray-400 mt-0.5 truncate max-w-32.5">{veh.model}</span>
                     </div>
                   </div>
                   <span className="text-[15px] font-bold text-waypoint-text">{veh.volumePercent}%</span>
