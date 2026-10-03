@@ -19,6 +19,8 @@ export interface StopRecord {
   weight_kg: number;
   volume_m3: number;
   access_notes: string;
+  latitude?: number;
+  longitude?: number;
   status: StopStatus;
 }
 
@@ -54,6 +56,8 @@ export const SEED_STOPS: readonly StopRecord[] = [
     weight_kg: 240,
     volume_m3: 1.6,
     access_notes: 'Standard Front Access',
+    latitude: 6.9061,
+    longitude: 79.8710,
     status: 'PENDING',
   },
   {
@@ -67,6 +71,8 @@ export const SEED_STOPS: readonly StopRecord[] = [
     weight_kg: 420,
     volume_m3: 2.4,
     access_notes: 'Rear Dock, Enter from Chapel Lane, Van Access Only, Bay 3 reserved',
+    latitude: 6.8649,
+    longitude: 79.8997,
     status: 'PENDING',
   },
   {
@@ -80,6 +86,8 @@ export const SEED_STOPS: readonly StopRecord[] = [
     weight_kg: 180,
     volume_m3: 1.8,
     access_notes: 'Curbside Unloading',
+    latitude: 6.9000,
+    longitude: 79.8541,
     status: 'PENDING',
   },
   {
@@ -93,6 +101,8 @@ export const SEED_STOPS: readonly StopRecord[] = [
     weight_kg: 310,
     volume_m3: 2.1,
     access_notes: 'Underground Service Bay',
+    latitude: 6.8406,
+    longitude: 79.8732,
     status: 'PENDING',
   },
 ] as const;
@@ -117,6 +127,8 @@ export function initDatabase(): void {
       weight_kg REAL NOT NULL,
       volume_m3 REAL NOT NULL,
       access_notes TEXT,
+      latitude REAL,
+      longitude REAL,
       status TEXT DEFAULT 'PENDING'
     );
   `);
@@ -152,8 +164,10 @@ export function initDatabase(): void {
         weight_kg,
         volume_m3,
         access_notes,
+        latitude,
+        longitude,
         status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     `);
 
     try {
@@ -169,6 +183,8 @@ export function initDatabase(): void {
           stop.weight_kg,
           stop.volume_m3,
           stop.access_notes,
+          stop.latitude ?? null,
+          stop.longitude ?? null,
           stop.status,
         ]);
       }

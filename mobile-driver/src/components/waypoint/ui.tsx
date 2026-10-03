@@ -62,6 +62,7 @@ export function Button({
   textSize = 14,
   style,
   textColor,
+  disabled,
 }: {
   children: ReactNode;
   onPress?: () => void;
@@ -72,6 +73,7 @@ export function Button({
   textSize?: number;
   style?: StyleProp<ViewStyle>;
   textColor?: string;
+  disabled?: boolean;
 }) {
   const color = textColor ?? buttonText[variant];
   const content = (
@@ -86,6 +88,7 @@ export function Button({
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
       style={({ pressed }) => [
         styles.button,
@@ -94,6 +97,7 @@ export function Button({
         variant === 'secondary' && styles.buttonSecondary,
         style,
         pressed && styles.pressed,
+        disabled && { opacity: 0.5 },
       ]}>
       {variant === 'primary' ? (
         <LinearGradient

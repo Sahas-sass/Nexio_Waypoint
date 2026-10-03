@@ -9,8 +9,20 @@ import {
   Text,
   View,
 } from 'react-native';
+import * as Location from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, Path, Pattern, Rect } from 'react-native-svg';
+
+// react-native-maps is native-only; lazy-require to avoid web crash
+let MapView: any = View;
+let Marker: any = View;
+let Polyline: any = View;
+if (Platform.OS !== 'web') {
+  const Maps = require('react-native-maps');
+  MapView = Maps.default;
+  Marker = Maps.Marker;
+  Polyline = Maps.Polyline;
+}
 
 import { Screen } from '@/components/waypoint/chrome';
 import { Icon, type IconName } from '@/components/waypoint/icon';
@@ -30,6 +42,8 @@ export default function CurrentStopScreen() {
 
   const [stop, setStop] = useState<StopRecord | null>(null);
   const [totalStopsCount, setTotalStopsCount] = useState<number>(6);
+  const [currentLocation, setCurrentLocation] = useState<Location.LocationObject | null>(null);
+  const [distanceKm, setDistanceKm] = useState<string>('...');
 
   // Load stop dynamically from SQLite based on query parameter or active/pending status
   const loadStopData = useCallback(() => {
@@ -82,6 +96,41 @@ export default function CurrentStopScreen() {
   useEffect(() => {
     loadStopData();
   }, [loadStopData]);
+
+  useEffect(() => {
+    let locationSubscription: Location.LocationSubscription;
+    
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      
+      const loc = await Location.getCurrentPositionAsync({});
+      setCurrentLocation(loc);
+      
+      locationSubscription = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.Balanced, timeInterval: 5000, distanceInterval: 10 },
+        (newLoc) => setCurrentLocation(newLoc)
+      );
+    })();
+
+    return () => {
+      if (locationSubscription) locationSubscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (currentLocation && stop?.latitude && stop?.longitude) {
+      const R = 6371;
+      const dLat = (stop.latitude - currentLocation.coords.latitude) * Math.PI / 180;
+      const dLon = (stop.longitude - currentLocation.coords.longitude) * Math.PI / 180;
+      const lat1 = currentLocation.coords.latitude * Math.PI / 180;
+      const lat2 = stop.latitude * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.sin(dLon/2) * Math.sin(dLon/2) * Math.cos(lat1) * Math.cos(lat2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      setDistanceKm((R * c).toFixed(1));
+    }
+  }, [currentLocation, stop]);
 
   // Fallback defaults if SQLite row is loading
   const stopNumberStr = stop ? String(stop.stop_number).padStart(2, '0') : '02';
@@ -197,41 +246,43 @@ export default function CurrentStopScreen() {
       {/* 3. Map Snapshot & Direct Navigation */}
       <Card style={styles.mapCard}>
         <View style={styles.mapContainer}>
-          <Svg style={StyleSheet.absoluteFill}>
-            <Defs>
-              <Pattern
-                id="grid"
-                width="20"
-                height="20"
-                patternUnits="userSpaceOnUse">
-                <Path
-                  d="M20 0H0V20"
-                  fill="none"
-                  stroke="rgba(255,255,255,0.35)"
-                  strokeWidth={1}
+          {(stop?.latitude && stop?.longitude) ? (
+            <MapView
+              style={StyleSheet.absoluteFill}
+              initialRegion={{
+                latitude: stop.latitude,
+                longitude: stop.longitude,
+                latitudeDelta: 0.015,
+                longitudeDelta: 0.015,
+              }}
+            >
+              {currentLocation && (
+                <Marker 
+                  coordinate={currentLocation.coords} 
+                  title="You" 
+                  pinColor="blue"
                 />
-              </Pattern>
-            </Defs>
-            <Rect width="100%" height="100%" fill="url(#grid)" />
-          </Svg>
-
-          {/* Visual stylized roads */}
-          <View style={[styles.mapRoad, styles.mapRoadMain]} />
-          <View style={[styles.mapRoad, styles.mapRoadCross]} />
-          <View style={[styles.mapRoad, styles.mapRoadDiagonal]} />
-
-          {/* Destination Map Pin */}
-          <View style={styles.destinationPin}>
-            <View style={styles.destinationPinIcon}>
-              <Icon name="pin" size={20} color={Colors.textPrimary} />
+              )}
+              <Marker 
+                coordinate={{ latitude: stop.latitude, longitude: stop.longitude }} 
+                title={storeName} 
+              />
+              {currentLocation && (
+                <Polyline 
+                  coordinates={[
+                    currentLocation.coords,
+                    { latitude: stop.latitude, longitude: stop.longitude }
+                  ]}
+                  strokeColor="#8A5900"
+                  strokeWidth={3}
+                />
+              )}
+            </MapView>
+          ) : (
+            <View style={{flex: 1, backgroundColor: '#E8ECE4', alignItems: 'center', justifyContent: 'center'}}>
+              <Text>Location Unavailable</Text>
             </View>
-          </View>
-
-          {/* Truck Position Pill */}
-          <View style={styles.youPositionBadge}>
-            <View style={styles.youPositionDot} />
-            <Text style={styles.youPositionText}>You (TRK-024)</Text>
-          </View>
+          )}
         </View>
 
         {/* Location Copy & Proximity */}
@@ -246,7 +297,7 @@ export default function CurrentStopScreen() {
           </View>
           <View style={styles.proximityBadge}>
             <Icon name="navigation" size={13} color="#8A5900" />
-            <Text style={styles.proximityText}>1.2 km away</Text>
+            <Text style={styles.proximityText}>{distanceKm} km away</Text>
           </View>
         </View>
 
