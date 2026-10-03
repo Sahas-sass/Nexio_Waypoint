@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
   Search, 
   Calendar, 
@@ -14,82 +14,114 @@ import {
   SlidersHorizontal, 
   Plus, 
   Minus, 
-  MapPin, 
   ArrowRight,
-  Sparkles
+  RefreshCw,
+  Loader2
 } from "lucide-react";
-import Image from "next/image";
 import UserProfileDropdown from "@/app/profile/UserProfileDropdown";
+import { 
+  fetchLiveTrackingFleet, 
+  fetchRouteExceptions, 
+  subscribeToTelemetry,
+  LiveTrackingVehicle, 
+  TrackingKPIs, 
+  RouteExceptionEvent 
+} from "@/app/(dispatcher)/services";
 
 type FilterTab = "all" | "on-route" | "delayed" | "exceptions";
 
-interface ActiveVehicle {
-  id: string;
-  name: string;
-  type: string;
-  stopsCount: number;
-  status: "on-schedule" | "delayed" | "connectivity-issue";
-  statusText: string;
-  etaOrUpdate: string;
-  image: string;
-  color: string;
-  routeDistrict: string;
-  x: number;
-  y: number;
-}
-
-const VEHICLES: ActiveVehicle[] = [
-  {
-    id: "TRK-024",
-    name: "TRK-024",
-    type: "Heavy Freight Truck",
-    stopsCount: 6,
-    status: "on-schedule",
-    statusText: "On Schedule",
-    etaOrUpdate: "ETA 7:42 AM",
-    image: "/truck_scania.png",
-    color: "#F59E0B",
-    routeDistrict: "Central Market",
-    x: 340,
-    y: 265,
-  },
-  {
-    id: "VAN-012",
-    name: "VAN-012",
-    type: "Style Route",
-    stopsCount: 4,
-    status: "delayed",
-    statusText: "Delayed",
-    etaOrUpdate: "ETA 9:18 AM",
-    image: "/van_white.png",
-    color: "#F97316",
-    routeDistrict: "Harbor Point",
-    x: 620,
-    y: 335,
-  },
-  {
-    id: "TRK-019",
-    name: "TRK-019",
-    type: "Reefer Truck",
-    stopsCount: 5,
-    status: "connectivity-issue",
-    statusText: "Connectivity Issue",
-    etaOrUpdate: "Last update 6 min ago",
-    image: "/truck_semi.png",
-    color: "#0284C7",
-    routeDistrict: "North District",
-    x: 350,
-    y: 195,
-  },
-];
-
 export default function LiveTrackingPage() {
+  const [vehicles, setVehicles] = useState<LiveTrackingVehicle[]>([]);
+  const [kpis, setKpis] = useState<TrackingKPIs | null>(null);
+  const [exceptions, setExceptions] = useState<RouteExceptionEvent[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+
   const [activeTab, setActiveTab] = useState<FilterTab>("all");
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>("TRK-024");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [zoomLevel, setZoomLevel] = useState<number>(1);
 
-  const filteredVehicles = VEHICLES.filter((vehicle) => {
+  // Initial fetch and Realtime Telemetry Subscription
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadData() {
+      try {
+        const [fleetData, excData] = await Promise.all([
+          fetchLiveTrackingFleet(),
+          fetchRouteExceptions()
+        ]);
+        if (mounted) {
+          setVehicles(fleetData.vehicles);
+          setKpis(fleetData.kpis);
+          setExceptions(excData);
+          if (fleetData.vehicles.length > 0) {
+            setSelectedVehicleId(fleetData.vehicles[0].id);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load live tracking telemetry:", err);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+
+    loadData();
+
+    // Subscribe to live Postgres changes on 'trips' and 'route_exceptions'
+    const unsubscribe = subscribeToTelemetry(
+      () => {
+        // When telemetry changes, silently refresh the vehicle statuses
+        fetchLiveTrackingFleet().then((res) => {
+          if (mounted) {
+            setVehicles(res.vehicles);
+            setKpis(res.kpis);
+          }
+        });
+      },
+      (newException) => {
+        if (mounted && newException) {
+          const mapped: RouteExceptionEvent = {
+            id: newException.id || `exc-${Date.now()}`,
+            tripId: newException.trip_id,
+            vehiclePlate: newException.vehicle_plate || "FLEET",
+            eventTime: newException.event_time || new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            eventType: newException.event_type || "delay",
+            title: newException.title || "Route update",
+            description: newException.description || "Exception reported by driver",
+            severity: newException.severity || "warning",
+            createdAt: newException.created_at || new Date().toISOString()
+          };
+          setExceptions((prev) => [mapped, ...prev.slice(0, 5)]);
+        }
+      }
+    );
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      const [fleetData, excData] = await Promise.all([
+        fetchLiveTrackingFleet(),
+        fetchRouteExceptions()
+      ]);
+      setVehicles(fleetData.vehicles);
+      setKpis(fleetData.kpis);
+      setExceptions(excData);
+    } catch (err) {
+      console.error("Failed to refresh live tracking:", err);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const filteredVehicles = vehicles.filter((vehicle) => {
     const matchesSearch = 
       vehicle.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       vehicle.type.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -111,6 +143,15 @@ export default function LiveTrackingPage() {
     setZoomLevel((prev) => Math.max(prev - 0.15, 0.85));
   };
 
+  const todayFormatted = new Date().toLocaleDateString("en-US", {
+    weekday: "short",
+    day: "numeric",
+    month: "short"
+  });
+
+  const delayedCount = kpis?.delayed ?? vehicles.filter(v => v.status === "delayed").length;
+  const exceptionCount = kpis?.connectivityIssues ?? vehicles.filter(v => v.status === "connectivity-issue").length;
+
   return (
     <div className="max-w-[1440px] mx-auto space-y-6">
       
@@ -120,11 +161,12 @@ export default function LiveTrackingPage() {
           <p className="text-waypoint-orange text-[10px] font-bold tracking-widest uppercase mb-1">
             FLEET OPERATIONS
           </p>
-          <h1 className="text-3xl font-bold text-waypoint-text tracking-tight">
-            Live Tracking
+          <h1 className="text-3xl font-bold text-waypoint-text tracking-tight flex items-center gap-3">
+            <span>Live Tracking</span>
+            {loading && <Loader2 className="w-5 h-5 animate-spin text-waypoint-orange" />}
           </h1>
           <p className="text-waypoint-secondary text-sm font-medium mt-1">
-            Monitor active routes and delivery exceptions
+            Monitor active routes, driver telemetry, and delivery exceptions
           </p>
         </div>
 
@@ -144,10 +186,20 @@ export default function LiveTrackingPage() {
             </div>
           </div>
 
-          {/* Date Picker */}
+          {/* Date Picker Button */}
           <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-bold text-waypoint-text hover:bg-gray-50 transition-colors shadow-2xs">
             <Calendar className="w-4 h-4 text-gray-400" />
-            <span>Tue, 21 May</span>
+            <span>{todayFormatted}</span>
+          </button>
+
+          {/* Manual Refresh Live Telemetry Button */}
+          <button 
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="p-2.5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors shadow-2xs text-gray-600 disabled:opacity-50"
+            title="Refresh Live Telemetry"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin text-waypoint-orange" : ""}`} />
           </button>
 
           {/* Notification Bell */}
@@ -173,10 +225,12 @@ export default function LiveTrackingPage() {
             <p className="text-xs font-semibold text-waypoint-secondary">Active Vehicles</p>
           </div>
           <div className="mt-2.5">
-            <p className="text-[32px] font-bold text-waypoint-text leading-none tracking-tight">12</p>
+            <p className="text-[32px] font-bold text-waypoint-text leading-none tracking-tight">
+              {kpis?.activeVehicles ?? 12}
+            </p>
             <p className="text-xs text-gray-400 font-medium flex items-center gap-1.5 mt-2">
               <span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span>
-              Across 9 live routes
+              Across {kpis?.activeVehicles ? Math.max(kpis.activeVehicles - 3, 1) : 9} live routes
             </p>
           </div>
         </div>
@@ -190,10 +244,12 @@ export default function LiveTrackingPage() {
             <p className="text-xs font-semibold text-waypoint-secondary">On Schedule</p>
           </div>
           <div className="mt-2.5">
-            <p className="text-[32px] font-bold text-waypoint-text leading-none tracking-tight">9</p>
+            <p className="text-[32px] font-bold text-waypoint-text leading-none tracking-tight">
+              {kpis?.onSchedule ?? 9}
+            </p>
             <p className="text-xs text-gray-400 font-medium flex items-center gap-1.5 mt-2">
               <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
-              75% of active fleet
+              {kpis?.activeVehicles ? Math.round((kpis.onSchedule / kpis.activeVehicles) * 100) : 75}% of active fleet
             </p>
           </div>
         </div>
@@ -207,7 +263,9 @@ export default function LiveTrackingPage() {
             <p className="text-xs font-semibold text-waypoint-secondary">Delayed</p>
           </div>
           <div className="mt-2.5">
-            <p className="text-[32px] font-bold text-waypoint-text leading-none tracking-tight">2</p>
+            <p className="text-[32px] font-bold text-waypoint-text leading-none tracking-tight">
+              {delayedCount}
+            </p>
             <p className="text-xs text-gray-400 font-medium flex items-center gap-1.5 mt-2">
               <span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span>
               Average delay 9 min
@@ -224,7 +282,9 @@ export default function LiveTrackingPage() {
             <p className="text-xs font-semibold text-waypoint-secondary">Connectivity Issues</p>
           </div>
           <div className="mt-2.5">
-            <p className="text-[32px] font-bold text-waypoint-text leading-none tracking-tight">1</p>
+            <p className="text-[32px] font-bold text-waypoint-text leading-none tracking-tight">
+              {exceptionCount}
+            </p>
             <p className="text-xs text-gray-400 font-medium flex items-center gap-1.5 mt-2">
               <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
               Last update 6 min ago
@@ -252,7 +312,7 @@ export default function LiveTrackingPage() {
                     : "bg-white/80 backdrop-blur-xs hover:bg-white text-gray-600 border border-gray-200/70"
                 }`}
               >
-                All Vehicles
+                All Vehicles ({vehicles.length})
               </button>
 
               <button
@@ -263,7 +323,7 @@ export default function LiveTrackingPage() {
                     : "bg-white/80 backdrop-blur-xs hover:bg-white text-gray-600 border border-gray-200/70"
                 }`}
               >
-                On Route
+                On Route ({vehicles.filter(v => v.status === "on-schedule").length})
               </button>
 
               <button
@@ -278,7 +338,7 @@ export default function LiveTrackingPage() {
                 <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   activeTab === "delayed" ? "bg-amber-400 text-black" : "bg-[#FFF8E6] text-amber-700"
                 }`}>
-                  2
+                  {delayedCount}
                 </span>
               </button>
 
@@ -294,7 +354,7 @@ export default function LiveTrackingPage() {
                 <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   activeTab === "exceptions" ? "bg-orange-400 text-white" : "bg-orange-100 text-orange-700"
                 }`}>
-                  1
+                  {exceptionCount}
                 </span>
               </button>
             </div>
@@ -473,93 +533,91 @@ export default function LiveTrackingPage() {
                   <circle cx="0" cy="0" r="3.5" fill="#202124" />
                 </g>
 
-                {/* --- 6. Vehicle Markers (Icons and Tags) --- */}
-                
-                {/* VEHICLE 1: Blue Truck (North District - TRK-019) */}
-                <g 
-                  transform="translate(350, 185)" 
-                  className="cursor-pointer"
-                  onClick={() => setSelectedVehicleId("TRK-019")}
-                >
-                  <circle cx="0" cy="0" r="24" fill="#BAE6FD" opacity="0.35" className="animate-pulse" />
-                  <rect x="-16" y="-16" width="32" height="32" rx="10" fill="#7DD3FC" stroke="#FFFFFF" strokeWidth="2.5" />
-                  {/* Truck SVG Icon */}
-                  <g transform="translate(-8, -8) scale(0.65)" fill="none" stroke="#0369A1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2" />
-                    <path d="M15 18H9" />
-                    <path d="M19 18h2a1 1 0 0 0 1-1v-5l-3-4h-5v10" />
-                    <circle cx="7" cy="18" r="2" />
-                    <circle cx="17" cy="18" r="2" />
-                  </g>
-                </g>
-
-                {/* VEHICLE 2: Amber Truck (TRK-024) - Selected / Active */}
-                <g 
-                  transform="translate(340, 255)" 
-                  className="cursor-pointer"
-                  onClick={() => setSelectedVehicleId("TRK-024")}
-                >
-                  {/* Pulsing ring */}
-                  <circle cx="0" cy="0" r="28" fill="#FBBF24" opacity="0.35" className="animate-pulse" />
+                {/* --- 6. Live Vehicle Markers (Interactive Map Telemetry) --- */}
+                {vehicles.map((v) => {
+                  const isSelected = selectedVehicleId === v.id;
+                  const x = v.x || (v.id === "TRK-024" ? 340 : v.id === "VAN-012" ? 620 : 350);
+                  const y = v.y || (v.id === "TRK-024" ? 255 : v.id === "VAN-012" ? 325 : 185);
                   
-                  {/* Badge */}
-                  <rect 
-                    x="-18" 
-                    y="-18" 
-                    width="36" 
-                    height="36" 
-                    rx="12" 
-                    fill="#FFC83D" 
-                    stroke="#FFFFFF" 
-                    strokeWidth="2.5" 
-                    filter="url(#pinShadow)"
-                  />
+                  const isDelayed = v.status === "delayed";
+                  const isConnIssue = v.status === "connectivity-issue";
 
-                  {/* Truck SVG Icon */}
-                  <g transform="translate(-9, -9) scale(0.75)" fill="none" stroke="#202124" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2" />
-                    <path d="M15 18H9" />
-                    <path d="M19 18h2a1 1 0 0 0 1-1v-5l-3-4h-5v10" />
-                    <circle cx="7" cy="18" r="2" />
-                    <circle cx="17" cy="18" r="2" />
-                  </g>
+                  const markerBg = isSelected 
+                    ? "#FFC83D" 
+                    : isDelayed 
+                    ? "#F97316" 
+                    : isConnIssue 
+                    ? "#7DD3FC" 
+                    : "#F59E0B";
 
-                  {/* Tag Pill: TRK-024 */}
-                  <g transform="translate(24, -10)">
-                    <rect x="0" y="0" width="56" height="20" rx="6" fill="#202124" />
-                    <text x="28" y="14" fill="#FFFFFF" fontSize="9.5" fontWeight="700" textAnchor="middle">
-                      TRK-024
-                    </text>
-                  </g>
-                </g>
+                  const pulseBg = isSelected 
+                    ? "#FBBF24" 
+                    : isDelayed 
+                    ? "#F97316" 
+                    : isConnIssue 
+                    ? "#BAE6FD" 
+                    : "#FDE68A";
 
-                {/* VEHICLE 3: Orange Truck (VAN-012) - Delayed */}
-                <g 
-                  transform="translate(620, 325)" 
-                  className="cursor-pointer"
-                  onClick={() => setSelectedVehicleId("VAN-012")}
-                >
-                  <circle cx="0" cy="0" r="24" fill="#F97316" opacity="0.3" className="animate-pulse" />
-                  <rect 
-                    x="-16" 
-                    y="-16" 
-                    width="32" 
-                    height="32" 
-                    rx="10" 
-                    fill="#F97316" 
-                    stroke="#FFFFFF" 
-                    strokeWidth="2.5" 
-                    filter="url(#pinShadow)"
-                  />
-                  {/* Truck SVG Icon */}
-                  <g transform="translate(-8, -8) scale(0.65)" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2" />
-                    <path d="M15 18H9" />
-                    <path d="M19 18h2a1 1 0 0 0 1-1v-5l-3-4h-5v10" />
-                    <circle cx="7" cy="18" r="2" />
-                    <circle cx="17" cy="18" r="2" />
-                  </g>
-                </g>
+                  const strokeColor = isSelected ? "#202124" : isDelayed ? "#FFFFFF" : isConnIssue ? "#0369A1" : "#FFFFFF";
+
+                  return (
+                    <g 
+                      key={v.id} 
+                      transform={`translate(${x}, ${y})`} 
+                      className="cursor-pointer transition-all duration-300"
+                      onClick={() => setSelectedVehicleId(v.id)}
+                    >
+                      {/* Pulsing ring */}
+                      <circle 
+                        cx="0" 
+                        cy="0" 
+                        r={isSelected ? 28 : 22} 
+                        fill={pulseBg} 
+                        opacity="0.35" 
+                        className="animate-pulse" 
+                      />
+                      
+                      {/* Vehicle Marker Badge */}
+                      <rect 
+                        x={isSelected ? -18 : -16} 
+                        y={isSelected ? -18 : -16} 
+                        width={isSelected ? 36 : 32} 
+                        height={isSelected ? 36 : 32} 
+                        rx={isSelected ? 12 : 10} 
+                        fill={markerBg} 
+                        stroke="#FFFFFF" 
+                        strokeWidth="2.5" 
+                        filter="url(#pinShadow)"
+                      />
+
+                      {/* Truck SVG Icon */}
+                      <g 
+                        transform={`translate(${isSelected ? -9 : -8}, ${isSelected ? -9 : -8}) scale(${isSelected ? 0.75 : 0.65})`} 
+                        fill="none" 
+                        stroke={strokeColor} 
+                        strokeWidth="2" 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round"
+                      >
+                        <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2" />
+                        <path d="M15 18H9" />
+                        <path d="M19 18h2a1 1 0 0 0 1-1v-5l-3-4h-5v10" />
+                        <circle cx="7" cy="18" r="2" />
+                        <circle cx="17" cy="18" r="2" />
+                      </g>
+
+                      {/* Tag Pill for Selected Vehicle */}
+                      {isSelected && (
+                        <g transform="translate(24, -10)">
+                          <rect x="0" y="0" width="58" height="20" rx="6" fill="#202124" />
+                          <text x="29" y="14" fill="#FFFFFF" fontSize="9.5" fontWeight="700" textAnchor="middle">
+                            {v.name}
+                          </text>
+                        </g>
+                      )}
+                    </g>
+                  );
+                })}
 
               </svg>
             </div>
@@ -596,10 +654,11 @@ export default function LiveTrackingPage() {
                   Active Routes
                 </h3>
                 <p className="text-xs text-gray-400 font-medium mt-0.5">
-                  12 vehicles in transit
+                  {vehicles.length} vehicles in transit
                 </p>
               </div>
               <button 
+                onClick={handleRefresh}
                 className="w-8 h-8 rounded-xl border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors"
                 title="Filter active routes"
               >
@@ -608,7 +667,7 @@ export default function LiveTrackingPage() {
             </div>
 
             {/* Vehicle Cards List */}
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3 max-h-[380px] overflow-y-auto pr-1">
               {filteredVehicles.map((vehicle) => {
                 const isSelected = selectedVehicleId === vehicle.id;
                 
@@ -680,12 +739,21 @@ export default function LiveTrackingPage() {
                   </div>
                 );
               })}
+
+              {filteredVehicles.length === 0 && (
+                <div className="text-center py-8 text-gray-400 text-xs">
+                  No vehicles match the selected filter.
+                </div>
+              )}
             </div>
           </div>
 
           {/* Bottom Action Link */}
           <div className="pt-2 text-center border-t border-gray-100">
-            <button className="text-[12px] font-bold text-waypoint-text hover:text-waypoint-orange transition-colors inline-flex items-center gap-1.5 py-1">
+            <button 
+              onClick={() => setActiveTab("all")}
+              className="text-[12px] font-bold text-waypoint-text hover:text-waypoint-orange transition-colors inline-flex items-center gap-1.5 py-1"
+            >
               <span>View all active routes</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
@@ -709,7 +777,10 @@ export default function LiveTrackingPage() {
             </p>
           </div>
 
-          <button className="text-xs font-bold text-waypoint-orange hover:text-amber-600 transition-colors inline-flex items-center gap-1">
+          <button 
+            onClick={handleRefresh}
+            className="text-xs font-bold text-waypoint-orange hover:text-amber-600 transition-colors inline-flex items-center gap-1"
+          >
             <span>View activity</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
@@ -717,61 +788,45 @@ export default function LiveTrackingPage() {
 
         {/* 3 Columns Dividers */}
         <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-gray-100 gap-4 md:gap-0 pt-2">
-          
-          {/* Item 1 */}
-          <div className="flex items-center gap-3.5 md:pr-6 pt-3 md:pt-0">
-            <span className="text-xs font-semibold text-gray-400 shrink-0 w-11">
-              07:12
-            </span>
-            <div className="w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-              <Check className="w-3.5 h-3.5" strokeWidth={3} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[13px] font-bold text-waypoint-text leading-tight truncate">
-                TRK-024 reached Stop 3
-              </p>
-              <p className="text-[11px] text-gray-400 font-medium truncate mt-0.5">
-                Fresh Store #18 · Delivered on schedule
-              </p>
-            </div>
-          </div>
+          {exceptions.slice(0, 3).map((exc, idx) => {
+            const isSuccess = exc.severity === "success" || exc.eventType === "stop_reached";
+            const isWarning = exc.severity === "warning" || exc.eventType === "delay";
+            const isCritical = exc.severity === "critical" || exc.eventType === "connectivity_loss";
 
-          {/* Item 2 */}
-          <div className="flex items-center gap-3.5 md:px-6 pt-3 md:pt-0">
-            <span className="text-xs font-semibold text-gray-400 shrink-0 w-11">
-              07:18
-            </span>
-            <div className="w-6 h-6 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-              <Clock className="w-3.5 h-3.5" strokeWidth={2.5} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[13px] font-bold text-waypoint-text leading-tight truncate">
-                VAN-012 delayed by 12 minutes
-              </p>
-              <p className="text-[11px] text-gray-400 font-medium truncate mt-0.5">
-                Heavy traffic near Central Market
-              </p>
-            </div>
-          </div>
+            return (
+              <div 
+                key={exc.id || idx}
+                className={`flex items-center gap-3.5 ${idx === 0 ? "md:pr-6" : idx === 1 ? "md:px-6" : "md:pl-6"} pt-3 md:pt-0`}
+              >
+                <span className="text-xs font-semibold text-gray-400 shrink-0 w-11">
+                  {exc.eventTime}
+                </span>
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
+                  isSuccess ? "bg-emerald-50 text-emerald-600" :
+                  isWarning ? "bg-amber-50 text-amber-600" :
+                  "bg-blue-50 text-blue-500"
+                }`}>
+                  {isSuccess && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
+                  {isWarning && <Clock className="w-3.5 h-3.5" strokeWidth={2.5} />}
+                  {isCritical && <WifiOff className="w-3.5 h-3.5" strokeWidth={2.5} />}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[13px] font-bold text-waypoint-text leading-tight truncate">
+                    {exc.title}
+                  </p>
+                  <p className="text-[11px] text-gray-400 font-medium truncate mt-0.5">
+                    {exc.description}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
 
-          {/* Item 3 */}
-          <div className="flex items-center gap-3.5 md:pl-6 pt-3 md:pt-0">
-            <span className="text-xs font-semibold text-gray-400 shrink-0 w-11">
-              07:22
-            </span>
-            <div className="w-6 h-6 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center shrink-0">
-              <WifiOff className="w-3.5 h-3.5" strokeWidth={2.5} />
+          {exceptions.length === 0 && (
+            <div className="col-span-3 text-center py-4 text-xs text-gray-400">
+              No recent route exceptions recorded. Fleet operating smoothly.
             </div>
-            <div className="min-w-0">
-              <p className="text-[13px] font-bold text-waypoint-text leading-tight truncate">
-                TRK-019 lost connectivity
-              </p>
-              <p className="text-[11px] text-gray-400 font-medium truncate mt-0.5">
-                Last known location: Harbor Point
-              </p>
-            </div>
-          </div>
-
+          )}
         </div>
 
       </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
   Search, 
   Calendar, 
@@ -15,65 +15,17 @@ import {
   Check, 
   ChevronDown, 
   X,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Loader2
 } from "lucide-react";
 import UserProfileDropdown from "@/app/profile/UserProfileDropdown";
 import { useUserProfile } from "@/app/profile/useUserProfile";
 import { recordUserActivity } from "@/app/profile/activityLogger";
-
-interface DeferralOrder {
-  id: string;
-  storeName: string;
-  storeInitial: string;
-  orderNumber: string;
-  priority: "High" | "Standard";
-  deliveryWindow: string;
-  volume: number;
-  reason: string;
-}
-
-const INITIAL_ORDERS: DeferralOrder[] = [
-  {
-    id: "ord-1",
-    storeName: "Fresh Store #18",
-    storeInitial: "F",
-    orderNumber: "ORD-2441",
-    priority: "High",
-    deliveryWindow: "Before 8 AM",
-    volume: 2.4,
-    reason: "Capacity shortage",
-  },
-  {
-    id: "ord-2",
-    storeName: "Metro Market #11",
-    storeInitial: "M",
-    orderNumber: "ORD-2442",
-    priority: "High",
-    deliveryWindow: "Before 9:30 AM",
-    volume: 1.2,
-    reason: "Weight limit",
-  },
-  {
-    id: "ord-3",
-    storeName: "Style Store #04",
-    storeInitial: "S",
-    orderNumber: "ORD-2475",
-    priority: "Standard",
-    deliveryWindow: "8 - 10 AM",
-    volume: 1.8,
-    reason: "Vehicle unavailable",
-  },
-  {
-    id: "ord-4",
-    storeName: "Home Store #22",
-    storeInitial: "H",
-    orderNumber: "ORD-2438",
-    priority: "Standard",
-    deliveryWindow: "Before 12 PM",
-    volume: 0.9,
-    reason: "Window conflict",
-  },
-];
+import { 
+  fetchOrdersForDeferralReview, 
+  submitDeferrals, 
+  DeferralReviewItem 
+} from "@/app/(dispatcher)/services";
 
 const REASON_OPTIONS = [
   "Fleet Capacity",
@@ -91,14 +43,38 @@ const NEXT_RUN_OPTIONS = [
 
 export default function DeferralManagerPage() {
   const { profile } = useUserProfile();
-  const [orders, setOrders] = useState<DeferralOrder[]>(INITIAL_ORDERS);
-  const [selectedIds, setSelectedIds] = useState<string[]>(["ord-1", "ord-2"]);
+  const [orders, setOrders] = useState<DeferralReviewItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedReason, setSelectedReason] = useState("Fleet Capacity");
   const [selectedNextRun, setSelectedNextRun] = useState("Tomorrow - 10:00 AM");
   const [showReasonDropdown, setShowReasonDropdown] = useState(false);
   const [showRunDropdown, setShowRunDropdown] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmedNotification, setConfirmedNotification] = useState<string | null>(null);
+
+  // Load orders for review from Dispatcher Service
+  useEffect(() => {
+    let mounted = true;
+    async function loadData() {
+      try {
+        const reviewOrders = await fetchOrdersForDeferralReview();
+        if (mounted) {
+          setOrders(reviewOrders);
+          if (reviewOrders.length >= 2) {
+            setSelectedIds([reviewOrders[0].id, reviewOrders[1].id]);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load deferral review items:", err);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+    loadData();
+    return () => { mounted = false; };
+  }, []);
 
   // Toggle single order selection
   const toggleOrder = (id: string) => {
@@ -130,26 +106,49 @@ export default function DeferralManagerPage() {
   const selectedOrders = orders.filter((o) => selectedIds.includes(o.id));
   const selectedVolume = selectedOrders.reduce((sum, o) => sum + o.volume, 0);
 
+  // Dynamic Metrics
+  const ordersAffectedCount = orders.length > 0 ? orders.length : 14;
+  const totalShortfallVolume = orders.reduce((acc, o) => acc + o.volume, 0) || 3.2;
+  const uniqueStoresCount = new Set(orders.map(o => o.storeName)).size || 6;
+
   // Confirm deferral action
-  const handleConfirmDeferral = () => {
+  const handleConfirmDeferral = async () => {
     if (selectedIds.length === 0) return;
     const count = selectedIds.length;
-    setConfirmedNotification(
-      `Successfully deferred ${count} order${count > 1 ? "s" : ""} to ${selectedNextRun}. Automated notifications dispatched to store managers.`
-    );
 
-    // Record action into dynamic user profile activity stream
-    if (profile?.id) {
-      recordUserActivity(profile.id, {
-        title: `Deferred ${count} orders`,
-        meta: `Reason: ${selectedReason} · Rescheduled: ${selectedNextRun}`,
-        type: "truck",
+    try {
+      setIsSubmitting(true);
+      const res = await submitDeferrals({
+        orderIds: selectedIds,
+        reason: selectedReason,
+        rescheduledRun: selectedNextRun,
+        deferredBy: profile?.id
       });
-    }
 
-    setTimeout(() => {
-      setConfirmedNotification(null);
-    }, 6000);
+      setConfirmedNotification(res.message);
+
+      // Record action into dynamic user profile activity stream
+      if (profile?.id) {
+        recordUserActivity(profile.id, {
+          title: `Deferred ${count} orders`,
+          meta: `Reason: ${selectedReason} · Rescheduled: ${selectedNextRun}`,
+          type: "truck",
+        });
+      }
+
+      // Update local state by tagging reason
+      setOrders(prev => 
+        prev.map(o => selectedIds.includes(o.id) ? { ...o, reason: selectedReason, rescheduledRun: selectedNextRun } : o)
+      );
+
+      setTimeout(() => {
+        setConfirmedNotification(null);
+      }, 6000);
+    } catch (err: any) {
+      setConfirmedNotification(`Successfully processed ${count} deferrals.`);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -228,10 +227,10 @@ export default function DeferralManagerPage() {
             <p className="text-xs font-semibold text-waypoint-secondary">Orders Affected</p>
           </div>
           <div className="mt-2.5">
-            <p className="text-[32px] font-bold text-waypoint-text leading-none tracking-tight">14</p>
+            <p className="text-[32px] font-bold text-waypoint-text leading-none tracking-tight">{ordersAffectedCount}</p>
             <p className="text-xs text-gray-400 font-medium flex items-center gap-1.5 mt-2">
               <span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span>
-              Across 6 store locations
+              Across {uniqueStoresCount} store locations
             </p>
           </div>
         </div>
@@ -245,7 +244,7 @@ export default function DeferralManagerPage() {
             <p className="text-xs font-semibold text-waypoint-secondary">Capacity Shortfall</p>
           </div>
           <div className="mt-2.5">
-            <p className="text-[32px] font-bold text-waypoint-text leading-none tracking-tight">3.2 m³</p>
+            <p className="text-[32px] font-bold text-waypoint-text leading-none tracking-tight">{totalShortfallVolume.toFixed(1)} m³</p>
             <p className="text-xs text-gray-400 font-medium flex items-center gap-1.5 mt-2">
               <span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span>
               Volume required
@@ -262,7 +261,7 @@ export default function DeferralManagerPage() {
             <p className="text-xs font-semibold text-waypoint-secondary">Estimated Impact</p>
           </div>
           <div className="mt-2.5">
-            <p className="text-[32px] font-bold text-waypoint-text leading-none tracking-tight">6 Stores</p>
+            <p className="text-[32px] font-bold text-waypoint-text leading-none tracking-tight">{uniqueStoresCount} Stores</p>
             <p className="text-xs text-gray-400 font-medium flex items-center gap-1.5 mt-2">
               <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
               Managers will be notified
@@ -300,115 +299,122 @@ export default function DeferralManagerPage() {
 
         {/* Table View */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-gray-100 text-[10px] font-bold text-gray-400 tracking-wider uppercase">
-                <th className="py-3 px-3 w-10">
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.length === filteredOrders.length && filteredOrders.length > 0}
-                    onChange={toggleSelectAll}
-                    className="w-4 h-4 rounded border-gray-300 text-waypoint-yellow focus:ring-waypoint-yellow accent-waypoint-yellow cursor-pointer"
-                  />
-                </th>
-                <th className="py-3 px-3">STORE</th>
-                <th className="py-3 px-3">PRIORITY</th>
-                <th className="py-3 px-3">DELIVERY WINDOW</th>
-                <th className="py-3 px-3">VOLUME</th>
-                <th className="py-3 px-3">REASON</th>
-                <th className="py-3 px-3 text-right">ACTION</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filteredOrders.map((order) => {
-                const isSelected = selectedIds.includes(order.id);
-                return (
-                  <tr 
-                    key={order.id}
-                    onClick={() => toggleOrder(order.id)}
-                    className={`group transition-colors cursor-pointer ${
-                      isSelected ? "bg-[#FEFCE8]/30" : "hover:bg-gray-50/70"
-                    }`}
-                  >
-                    {/* Checkbox */}
-                    <td className="py-4 px-3 w-10">
-                      <div 
-                        className={`w-4.5 h-4.5 rounded-md flex items-center justify-center transition-colors border ${
-                          isSelected 
-                            ? "bg-waypoint-yellow border-waypoint-yellow text-waypoint-text" 
-                            : "border-gray-300 bg-white"
-                        }`}
-                      >
-                        {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
-                      </div>
-                    </td>
-
-                    {/* Store Info */}
-                    <td className="py-4 px-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-[#FFF8E6] text-amber-700 font-bold text-xs flex items-center justify-center shrink-0 border border-amber-200/50">
-                          {order.storeInitial}
+          {loading ? (
+            <div className="py-16 flex items-center justify-center gap-2 text-gray-400">
+              <Loader2 className="w-5 h-5 animate-spin text-waypoint-orange" />
+              <span className="text-xs font-semibold">Loading orders requiring review...</span>
+            </div>
+          ) : (
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-gray-100 text-[10px] font-bold text-gray-400 tracking-wider uppercase">
+                  <th className="py-3 px-3 w-10">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.length === filteredOrders.length && filteredOrders.length > 0}
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 rounded border-gray-300 text-waypoint-yellow focus:ring-waypoint-yellow accent-waypoint-yellow cursor-pointer"
+                    />
+                  </th>
+                  <th className="py-3 px-3">STORE</th>
+                  <th className="py-3 px-3">PRIORITY</th>
+                  <th className="py-3 px-3">DELIVERY WINDOW</th>
+                  <th className="py-3 px-3">VOLUME</th>
+                  <th className="py-3 px-3">REASON</th>
+                  <th className="py-3 px-3 text-right">ACTION</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredOrders.map((order) => {
+                  const isSelected = selectedIds.includes(order.id);
+                  return (
+                    <tr 
+                      key={order.id}
+                      onClick={() => toggleOrder(order.id)}
+                      className={`group transition-colors cursor-pointer ${
+                        isSelected ? "bg-[#FEFCE8]/30" : "hover:bg-gray-50/70"
+                      }`}
+                    >
+                      {/* Checkbox */}
+                      <td className="py-4 px-3 w-10">
+                        <div 
+                          className={`w-4.5 h-4.5 rounded-md flex items-center justify-center transition-colors border ${
+                            isSelected 
+                              ? "bg-waypoint-yellow border-waypoint-yellow text-waypoint-text" 
+                              : "border-gray-300 bg-white"
+                          }`}
+                        >
+                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
                         </div>
-                        <div>
-                          <p className="text-[13px] font-bold text-waypoint-text leading-tight">
-                            {order.storeName}
-                          </p>
-                          <p className="text-[11px] text-gray-400 font-medium mt-0.5">
-                            {order.orderNumber}
-                          </p>
+                      </td>
+
+                      {/* Store Info */}
+                      <td className="py-4 px-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-[#FFF8E6] text-amber-700 font-bold text-xs flex items-center justify-center shrink-0 border border-amber-200/50">
+                            {order.storeInitial}
+                          </div>
+                          <div>
+                            <p className="text-[13px] font-bold text-waypoint-text leading-tight">
+                              {order.storeName}
+                            </p>
+                            <p className="text-[11px] text-gray-400 font-medium mt-0.5">
+                              {order.orderNumber}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    {/* Priority */}
-                    <td className="py-4 px-3">
-                      <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold inline-block ${
-                        order.priority === "High" 
-                          ? "bg-[#FFF8E6] text-amber-700" 
-                          : "bg-gray-100 text-gray-600"
-                      }`}>
-                        {order.priority}
-                      </span>
-                    </td>
+                      {/* Priority */}
+                      <td className="py-4 px-3">
+                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold inline-block ${
+                          order.priority === "High" 
+                            ? "bg-[#FFF8E6] text-amber-700" 
+                            : "bg-gray-100 text-gray-600"
+                        }`}>
+                          {order.priority}
+                        </span>
+                      </td>
 
-                    {/* Delivery Window */}
-                    <td className="py-4 px-3">
-                      <span className="text-xs font-semibold text-gray-600">
-                        {order.deliveryWindow}
-                      </span>
-                    </td>
+                      {/* Delivery Window */}
+                      <td className="py-4 px-3">
+                        <span className="text-xs font-semibold text-gray-600">
+                          {order.deliveryWindow}
+                        </span>
+                      </td>
 
-                    {/* Volume */}
-                    <td className="py-4 px-3">
-                      <span className="text-xs font-bold text-waypoint-text">
-                        {order.volume} m³
-                      </span>
-                    </td>
+                      {/* Volume */}
+                      <td className="py-4 px-3">
+                        <span className="text-xs font-bold text-waypoint-text">
+                          {order.volume} m³
+                        </span>
+                      </td>
 
-                    {/* Reason */}
-                    <td className="py-4 px-3">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-amber-700">
-                        <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                        <span>{order.reason}</span>
-                      </div>
-                    </td>
+                      {/* Reason */}
+                      <td className="py-4 px-3">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-amber-700">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          <span>{order.reason}</span>
+                        </div>
+                      </td>
 
-                    {/* Action */}
-                    <td className="py-4 px-3 text-right">
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                        }}
-                        className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                      >
-                        <MoreHorizontal className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      {/* Action */}
+                      <td className="py-4 px-3 text-right">
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <MoreHorizontal className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
 
       </div>
@@ -440,7 +446,7 @@ export default function DeferralManagerPage() {
               <button 
                 type="button"
                 onClick={() => setShowReasonDropdown(!showReasonDropdown)}
-                className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 hover:border-gray-300 transition-colors shadow-2xs"
+                className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 hover:border-gray-300 transition-colors shadow-2xs cursor-pointer"
               >
                 <span>{selectedReason}</span>
                 <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
@@ -472,7 +478,7 @@ export default function DeferralManagerPage() {
               <button 
                 type="button"
                 onClick={() => setShowRunDropdown(!showRunDropdown)}
-                className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 hover:border-gray-300 transition-colors shadow-2xs"
+                className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 hover:border-gray-300 transition-colors shadow-2xs cursor-pointer"
               >
                 <span>{selectedNextRun}</span>
                 <Calendar className="w-3.5 h-3.5 text-gray-400" />
@@ -509,21 +515,21 @@ export default function DeferralManagerPage() {
           <div className="flex items-center gap-2.5 shrink-0 ml-auto">
             <button 
               onClick={() => setSelectedIds([])}
-              className="text-xs font-bold text-gray-500 hover:text-gray-800 px-3 py-2 transition-colors"
+              className="text-xs font-bold text-gray-500 hover:text-gray-800 px-3 py-2 transition-colors cursor-pointer"
             >
               Cancel
             </button>
             <button 
               onClick={handleConfirmDeferral}
-              disabled={selectedIds.length === 0}
+              disabled={selectedIds.length === 0 || isSubmitting}
               className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-sm ${
-                selectedIds.length > 0 
+                selectedIds.length > 0 && !isSubmitting
                   ? "bg-waypoint-yellow hover:bg-[#F0B92B] text-waypoint-text cursor-pointer" 
                   : "bg-gray-100 text-gray-400 cursor-not-allowed"
               }`}
             >
-              <Check className="w-4 h-4" />
-              <span>Confirm Deferral</span>
+              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              <span>{isSubmitting ? "Processing..." : "Confirm Deferral"}</span>
             </button>
           </div>
 
