@@ -92,7 +92,7 @@ export async function middleware(request: NextRequest) {
   const role = profile?.role;
 
   // 8. Define the route boundaries based on our Route Groups
-  const isDispatcherRoute = path.startsWith('/command-center') || path.startsWith('/allocation') || path.startsWith('/deferrals');
+  const isDispatcherRoute = path.startsWith('/command-center') || path.startsWith('/allocation') || path.startsWith('/deferrals') || path.startsWith('/tracking');
   const isLoaderRoute = path.startsWith('/trip-queue');
   const isManagerRoute = path.startsWith('/overview') || path.startsWith('/orders') || path.startsWith('/receiving') || path.startsWith('/alerts') || path.startsWith('/history');
 
