@@ -5,15 +5,20 @@ const cors = require('cors');
 const { Server } = require('socket.io');
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: true,
+  credentials: true,
+}));
 app.use(express.json());
 
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: '*',
+    origin: true,
     methods: ['GET', 'POST'],
+    credentials: true,
   },
+  allowEIO3: true,
 });
 
 const PORT = process.env.PORT || 3000;

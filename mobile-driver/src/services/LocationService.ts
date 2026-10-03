@@ -1,10 +1,11 @@
 import * as Location from 'expo-location';
 import { io, Socket } from 'socket.io-client';
 import { enqueueSyncItem } from '@/database/syncManager';
+import { useLocationStore } from '@/store/locationStore';
 
 // Ideally, this should point to the backend URL via an env variable.
 // For local testing on an emulator, use standard localhost or 10.0.2.2.
-const SOCKET_URL = 'http://localhost:3000';
+const SOCKET_URL = 'http://localhost:5000';
 
 class LocationService {
   private socket: Socket | null = null;
@@ -15,6 +16,7 @@ class LocationService {
     this.socket = io(SOCKET_URL, {
       autoConnect: true,
       reconnection: true,
+      transports: ['websocket'],   // Skip HTTP polling — go straight to WebSocket
     });
 
     this.socket.on('connect', () => {
@@ -37,6 +39,7 @@ class LocationService {
       }
 
       this.isTracking = true;
+      useLocationStore.getState().setIsTracking(true);
       console.log('[LocationService] Starting background tracking...');
 
       this.locationSubscription = await Location.watchPositionAsync(
@@ -52,6 +55,7 @@ class LocationService {
     } catch (error) {
       console.error('[LocationService] Error starting location tracking:', error);
       this.isTracking = false;
+      useLocationStore.getState().setIsTracking(false);
     }
   }
 
@@ -61,6 +65,7 @@ class LocationService {
       this.locationSubscription = null;
     }
     this.isTracking = false;
+    useLocationStore.getState().setIsTracking(false);
     console.log('[LocationService] Stopped background tracking.');
   }
 
@@ -73,6 +78,15 @@ class LocationService {
       speed: location.coords.speed,
       heading: location.coords.heading,
     };
+
+    // Push into the shared Zustand store so all screens react to the new position
+    useLocationStore.getState().setCoords({
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+      speed: location.coords.speed,
+      heading: location.coords.heading,
+      timestamp: location.timestamp,
+    });
 
     if (this.socket && this.socket.connected) {
       // Online: Emit directly to WebSocket
