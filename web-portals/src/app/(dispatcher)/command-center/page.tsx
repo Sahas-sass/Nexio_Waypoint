@@ -1,22 +1,11 @@
 "use client";
 
-import { Search, Calendar, Bell, Package, BarChart2, Truck, Clock, MapPin, LogOut, Sparkles, ArrowRight, AlertTriangle } from "lucide-react";
+import { Search, Calendar, Bell, Package, BarChart2, Truck, Clock, MapPin, Sparkles, ArrowRight, AlertTriangle } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { createBrowserClient } from "@supabase/ssr";
+import UserProfileDropdown from "@/app/profile/UserProfileDropdown";
 
 export default function CommandCenterPage() {
   const router = useRouter();
-
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
-  };
 
   return (
     <div className="max-w-350 mx-auto space-y-6">
@@ -55,23 +44,8 @@ export default function CommandCenterPage() {
             <span className="absolute top-2 right-2.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
           </button>
           
-          {/* Profile Pill */}
-          <div className="flex items-center gap-3 pl-2 cursor-pointer">
-            <div className="w-10 h-10 bg-gray-900 rounded-xl flex items-center justify-center text-white font-bold text-sm">KS</div>
-            <div className="hidden md:block">
-              <p className="text-sm font-bold text-waypoint-text leading-tight">Kasun S.</p>
-              <p className="text-[11px] text-gray-500 font-semibold">Dispatcher</p>
-            </div>
-          </div>
-
-          {/* TEMPORARY LOGOUT BUTTON */}
-          <button
-            onClick={handleLogout}
-            className="ml-2 flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 rounded-xl text-sm font-bold transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-            Logout
-          </button>
+          {/* Profile Dropdown */}
+          <UserProfileDropdown layoutVariant="header" />
         </div>
       </div>
 

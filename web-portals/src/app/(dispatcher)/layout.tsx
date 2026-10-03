@@ -69,13 +69,16 @@ export default function DispatcherLayout({ children }: { children: React.ReactNo
             <span className="text-[10px] font-medium tracking-tight group-hover:font-semibold">Alerts</span>
           </button>
 
-          {/* Settings */}
-          <button className="flex flex-col items-center gap-1.5 text-waypoint-secondary hover:text-waypoint-text transition-colors group">
+          {/* Settings / Profile */}
+          <Link 
+            href="/profile" 
+            className="flex flex-col items-center gap-1.5 text-waypoint-secondary hover:text-waypoint-text transition-colors group"
+          >
             <div className="p-1">
               <Settings className="w-5.5 h-5.5" strokeWidth={1.5} />
             </div>
             <span className="text-[10px] font-medium tracking-tight group-hover:font-semibold">Settings</span>
-          </button>
+          </Link>
           
           {/* Profile Identity */}
           <div className="mt-2 flex justify-center w-full">

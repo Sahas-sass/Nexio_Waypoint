@@ -2,9 +2,33 @@
 
 import { Search, Calendar, Bell, ChevronDown, Filter, Sparkles, GripVertical, Clock, Plus, AlertTriangle, Check } from "lucide-react";
 import { useRouter } from "next/navigation";
+import UserProfileDropdown from "@/app/profile/UserProfileDropdown";
+import { useUserProfile } from "@/app/profile/useUserProfile";
+import { recordUserActivity } from "@/app/profile/activityLogger";
 
 export default function AllocationPage() {
   const router = useRouter();
+  const { profile } = useUserProfile();
+
+  const handleAutoAllocate = () => {
+    if (profile?.id) {
+      recordUserActivity(profile.id, {
+        title: "Executed Auto Allocation",
+        meta: "18 orders allocated across 6 vehicles",
+        type: "truck",
+      });
+    }
+  };
+
+  const handlePublishPlan = () => {
+    if (profile?.id) {
+      recordUserActivity(profile.id, {
+        title: "Published Daily Delivery Plan",
+        meta: "Locked 6 vehicle routes for morning window",
+        type: "check",
+      });
+    }
+  };
 
   return (
     <div className="relative min-h-screen pb-32">
@@ -40,14 +64,8 @@ export default function AllocationPage() {
             <div className="absolute top-2.5 right-2.5 w-1.5 h-1.5 bg-waypoint-orange rounded-full border-[1.5px] border-white" />
           </button>
 
-          {/* Profile Pill */}
-          <div className="flex items-center gap-3 pl-2 cursor-pointer">
-            <div className="w-10 h-10 bg-waypoint-text rounded-xl flex items-center justify-center text-white font-bold text-sm">KS</div>
-            <div className="hidden md:block">
-              <p className="text-sm font-bold text-waypoint-text leading-tight">Kasun S.</p>
-              <p className="text-[11px] text-gray-500 font-semibold">Dispatcher</p>
-            </div>
-          </div>
+          {/* Profile Dropdown */}
+          <UserProfileDropdown layoutVariant="header" />
         </div>
       </div>
 
@@ -72,7 +90,10 @@ export default function AllocationPage() {
             <span className="text-[13px] font-bold text-waypoint-text">Filter</span>
           </button>
         </div>
-        <button className="bg-waypoint-yellow hover:bg-[#F0B92B] text-waypoint-text px-5 h-10 rounded-xl font-bold text-[13px] flex items-center gap-2 transition-colors shadow-sm">
+        <button 
+          onClick={handleAutoAllocate}
+          className="bg-waypoint-yellow hover:bg-[#F0B92B] text-waypoint-text px-5 h-10 rounded-xl font-bold text-[13px] flex items-center gap-2 transition-colors shadow-sm cursor-pointer"
+        >
           <Sparkles className="w-4 h-4" /> Auto Allocate
         </button>
       </div>
@@ -320,7 +341,10 @@ export default function AllocationPage() {
             <button className="flex items-center gap-2 h-10 px-5 bg-white border-2 border-gray-200 rounded-xl hover:bg-gray-50 transition-colors font-bold text-[13px] text-waypoint-text">
               <AlertTriangle className="w-4 h-4" /> Resolve Issues
             </button>
-            <button className="flex items-center gap-2 h-10 px-6 bg-waypoint-yellow hover:bg-[#F0B92B] rounded-xl transition-colors font-bold text-[13px] text-waypoint-text shadow-sm">
+            <button 
+              onClick={handlePublishPlan}
+              className="flex items-center gap-2 h-10 px-6 bg-waypoint-yellow hover:bg-[#F0B92B] rounded-xl transition-colors font-bold text-[13px] text-waypoint-text shadow-sm cursor-pointer"
+            >
               <Check className="w-4 h-4" /> Publish Plan
             </button>
           </div>

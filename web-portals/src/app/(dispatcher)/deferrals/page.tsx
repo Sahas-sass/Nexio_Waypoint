@@ -18,6 +18,8 @@ import {
   FileSpreadsheet
 } from "lucide-react";
 import UserProfileDropdown from "@/app/profile/UserProfileDropdown";
+import { useUserProfile } from "@/app/profile/useUserProfile";
+import { recordUserActivity } from "@/app/profile/activityLogger";
 
 interface DeferralOrder {
   id: string;
@@ -88,6 +90,7 @@ const NEXT_RUN_OPTIONS = [
 ];
 
 export default function DeferralManagerPage() {
+  const { profile } = useUserProfile();
   const [orders, setOrders] = useState<DeferralOrder[]>(INITIAL_ORDERS);
   const [selectedIds, setSelectedIds] = useState<string[]>(["ord-1", "ord-2"]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -134,6 +137,16 @@ export default function DeferralManagerPage() {
     setConfirmedNotification(
       `Successfully deferred ${count} order${count > 1 ? "s" : ""} to ${selectedNextRun}. Automated notifications dispatched to store managers.`
     );
+
+    // Record action into dynamic user profile activity stream
+    if (profile?.id) {
+      recordUserActivity(profile.id, {
+        title: `Deferred ${count} orders`,
+        meta: `Reason: ${selectedReason} · Rescheduled: ${selectedNextRun}`,
+        type: "truck",
+      });
+    }
+
     setTimeout(() => {
       setConfirmedNotification(null);
     }, 6000);
