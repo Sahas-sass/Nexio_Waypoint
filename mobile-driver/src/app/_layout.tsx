@@ -14,6 +14,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { OfflineBanner } from '@/components/offline/OfflineBanner';
 import { initDatabase } from '@/database/schema';
+import { downloadTripData } from '@/database/syncManager';
 import { useNetworkState } from '@/hooks/useNetworkState';
 import { W } from '@/utils/theme';
 import { locationService } from '@/services/LocationService';
@@ -26,6 +27,9 @@ export default function RootLayout() {
   useEffect(() => {
     try {
       initDatabase();
+      // Fetch fresh data from Supabase!
+      downloadTripData().catch(console.error);
+      
       // Initialize Socket.io connection and start GPS tracking
       locationService.initialize();
       locationService.startTracking('driver_123').catch(console.error);
