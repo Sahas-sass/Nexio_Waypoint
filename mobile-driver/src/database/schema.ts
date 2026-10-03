@@ -18,15 +18,7 @@ export interface StopRecord {
   items_count: number;
   weight_kg: number;
   volume_m3: number;
-  
-  // Structured Access Conditions
-  access_type: string; // e.g., 'Rear Dock'
-  access_instructions: string; // e.g., 'Enter from Chapel Lane'
-  vehicle_restriction: string; // e.g., 'Van Access Only'
-  vehicle_instructions: string; // e.g., 'Height restriction'
-  loading_bay_window: string; // e.g., '7:45-8:30 AM'
-  loading_bay_notes: string; // e.g., 'Bay 3 reserved'
-  
+  access_notes: string;
   latitude?: number;
   longitude?: number;
   status: StopStatus;
@@ -75,12 +67,7 @@ export const SEED_STOPS: readonly StopRecord[] = [
     items_count: 16,
     weight_kg: 240,
     volume_m3: 1.6,
-    access_type: 'Front Access',
-    access_instructions: 'Standard Entry',
-    vehicle_restriction: 'None',
-    vehicle_instructions: '',
-    loading_bay_window: '7:00-8:00 AM',
-    loading_bay_notes: 'Use visitor parking',
+    access_notes: 'Standard Front Access',
     latitude: 6.9061,
     longitude: 79.8710,
     status: 'PENDING',
@@ -96,12 +83,7 @@ export const SEED_STOPS: readonly StopRecord[] = [
     items_count: 28,
     weight_kg: 420,
     volume_m3: 2.4,
-    access_type: 'Rear Dock',
-    access_instructions: 'Enter from Chapel Lane',
-    vehicle_restriction: 'Van Access Only',
-    vehicle_instructions: 'Height restriction 2.1m',
-    loading_bay_window: '7:45-8:30 AM',
-    loading_bay_notes: 'Bay 3 reserved for your vehicle',
+    access_notes: 'Rear Dock, Enter from Chapel Lane, Van Access Only, Bay 3 reserved',
     latitude: 6.8649,
     longitude: 79.8997,
     status: 'PENDING',
@@ -117,12 +99,7 @@ export const SEED_STOPS: readonly StopRecord[] = [
     items_count: 12,
     weight_kg: 180,
     volume_m3: 1.8,
-    access_type: 'Curbside',
-    access_instructions: 'Main Road',
-    vehicle_restriction: 'None',
-    vehicle_instructions: '',
-    loading_bay_window: '9:00-10:00 AM',
-    loading_bay_notes: 'Hazard lights required',
+    access_notes: 'Curbside Unloading',
     latitude: 6.9000,
     longitude: 79.8541,
     status: 'PENDING',
@@ -138,12 +115,7 @@ export const SEED_STOPS: readonly StopRecord[] = [
     items_count: 20,
     weight_kg: 310,
     volume_m3: 2.1,
-    access_type: 'Underground',
-    access_instructions: 'Service Bay',
-    vehicle_restriction: 'Clearance 2.5m',
-    vehicle_instructions: 'Watch overhead pipes',
-    loading_bay_window: '10:30-11:15 AM',
-    loading_bay_notes: 'Use service elevator',
+    access_notes: 'Underground Service Bay',
     latitude: 6.8406,
     longitude: 79.8732,
     status: 'PENDING',
@@ -179,12 +151,7 @@ export function initDatabase(): void {
       items_count INTEGER NOT NULL,
       weight_kg REAL NOT NULL,
       volume_m3 REAL NOT NULL,
-      access_type TEXT,
-      access_instructions TEXT,
-      vehicle_restriction TEXT,
-      vehicle_instructions TEXT,
-      loading_bay_window TEXT,
-      loading_bay_notes TEXT,
+      access_notes TEXT,
       latitude REAL,
       longitude REAL,
       status TEXT DEFAULT 'PENDING',
@@ -231,12 +198,21 @@ export function initDatabase(): void {
   if (rowCount === 0) {
     const insertStatement = db.prepareSync(`
       INSERT INTO stops (
-        id, stop_number, store_name, address, window,
-        is_chilled, items_count, weight_kg, volume_m3,
-        access_type, access_instructions, vehicle_restriction,
-        vehicle_instructions, loading_bay_window, loading_bay_notes,
-        latitude, longitude, status, manager_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        id,
+        stop_number,
+        store_name,
+        address,
+        window,
+        is_chilled,
+        items_count,
+        weight_kg,
+        volume_m3,
+        access_notes,
+        latitude,
+        longitude,
+        status,
+        manager_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     `);
 
     try {
@@ -251,12 +227,7 @@ export function initDatabase(): void {
           stop.items_count,
           stop.weight_kg,
           stop.volume_m3,
-          stop.access_type,
-          stop.access_instructions,
-          stop.vehicle_restriction,
-          stop.vehicle_instructions,
-          stop.loading_bay_window,
-          stop.loading_bay_notes,
+          stop.access_notes,
           stop.latitude ?? null,
           stop.longitude ?? null,
           stop.status,

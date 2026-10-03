@@ -34,6 +34,7 @@ import {
   TitleRow,
 } from '@/components/waypoint/ui';
 import { db, initDatabase, type StopRecord, type StoreManagerRecord } from '@/database/schema';
+import { enqueueSyncItem } from '@/database/syncManager';
 import { Colors, font, Radius, Shadow, W } from '@/utils/theme';
 
 export default function CurrentStopScreen() {
@@ -152,12 +153,9 @@ export default function CurrentStopScreen() {
   const itemsCount = stop?.items_count ?? 28;
   const weightKg = stop?.weight_kg ?? 420;
   const volumeM3 = stop?.volume_m3 ?? 2.4;
-  const accessType = stop?.access_type ?? 'Rear Dock';
-  const accessInstructions = stop?.access_instructions ?? 'Enter from Chapel Lane';
-  const vehicleRestriction = stop?.vehicle_restriction ?? 'Van Access Only';
-  const vehicleInstructions = stop?.vehicle_instructions ?? 'Height restriction';
-  const loadingBayWindow = stop?.loading_bay_window ?? '7:45-8:30 AM';
-  const loadingBayNotes = stop?.loading_bay_notes ?? 'Bay 3 reserved for your vehicle';
+  const accessNotes =
+    stop?.access_notes ??
+    'Rear Dock, Enter from Chapel Lane, Van Access Only, Bay 3 reserved';
 
   // Address for navigation
   const fullAddress = locationCity.includes('High Level')
@@ -194,6 +192,9 @@ export default function CurrentStopScreen() {
         db.runSync("UPDATE stops SET status = 'IN_PROGRESS' WHERE id = ?;", [
           stop.id,
         ]);
+        
+        // Enqueue the offline sync action for Supabase
+        enqueueSyncItem(stop.id, 'STATUS_UPDATE', { status: 'IN_PROGRESS' });
       } catch (err) {
         console.error('[CurrentStop] Failed to update stop to IN_PROGRESS:', err);
       }
@@ -329,31 +330,6 @@ export default function CurrentStopScreen() {
           <Text style={styles.openNavButtonText}>Open Navigation</Text>
         </Pressable>
       </Card>
-
-      {/* 4. Physical Access Conditions (Critical Logistics Block) */}
-      <SectionHeading
-        title="Access conditions"
-        meta="Read before arrival"
-      />
-      <View style={styles.accessGrid}>
-        <AccessCard
-          icon="alert"
-          title={accessType}
-          detail={accessInstructions}
-          important
-        />
-        <AccessCard
-          icon="navigation"
-          title={vehicleRestriction}
-          detail={vehicleInstructions}
-        />
-        <AccessCard
-          icon="clock"
-          title={`Loading Bay: ${loadingBayWindow}`}
-          detail={loadingBayNotes}
-          wide
-        />
-      </View>
 
       {/* Store Manager Contact Card */}
       <View style={styles.contactCard}>
