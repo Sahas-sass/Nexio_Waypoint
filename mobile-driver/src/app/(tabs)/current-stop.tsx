@@ -33,7 +33,7 @@ import {
   SectionHeading,
   TitleRow,
 } from '@/components/waypoint/ui';
-import { db, initDatabase, type StopRecord } from '@/database/schema';
+import { db, initDatabase, type StopRecord, type StoreManagerRecord } from '@/database/schema';
 import { Colors, font, Radius, Shadow, W } from '@/utils/theme';
 
 export default function CurrentStopScreen() {
@@ -41,6 +41,7 @@ export default function CurrentStopScreen() {
   const params = useLocalSearchParams<{ stop?: string; stopId?: string }>();
 
   const [stop, setStop] = useState<StopRecord | null>(null);
+  const [manager, setManager] = useState<StoreManagerRecord | null>(null);
   const [totalStopsCount, setTotalStopsCount] = useState<number>(6);
   const [currentLocation, setCurrentLocation] = useState<Location.LocationObject | null>(null);
   const [distanceKm, setDistanceKm] = useState<string>('...');
@@ -82,6 +83,16 @@ export default function CurrentStopScreen() {
 
       setStop(foundStop);
 
+      if (foundStop?.manager_id) {
+        const mgr = db.getFirstSync<StoreManagerRecord>(
+          'SELECT * FROM store_managers WHERE id = ?;',
+          [foundStop.manager_id]
+        );
+        setManager(mgr);
+      } else {
+        setManager(null);
+      }
+
       const countRow = db.getFirstSync<{ count: number }>(
         'SELECT COUNT(*) as count FROM stops;'
       );
@@ -99,14 +110,14 @@ export default function CurrentStopScreen() {
 
   useEffect(() => {
     let locationSubscription: Location.LocationSubscription;
-    
+
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') return;
-      
+
       const loc = await Location.getCurrentPositionAsync({});
       setCurrentLocation(loc);
-      
+
       locationSubscription = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.Balanced, timeInterval: 5000, distanceInterval: 10 },
         (newLoc) => setCurrentLocation(newLoc)
@@ -125,9 +136,9 @@ export default function CurrentStopScreen() {
       const dLon = (stop.longitude - currentLocation.coords.longitude) * Math.PI / 180;
       const lat1 = currentLocation.coords.latitude * Math.PI / 180;
       const lat2 = stop.latitude * Math.PI / 180;
-      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                Math.sin(dLon/2) * Math.sin(dLon/2) * Math.cos(lat1) * Math.cos(lat2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       setDistanceKm((R * c).toFixed(1));
     }
   }, [currentLocation, stop]);
@@ -141,9 +152,12 @@ export default function CurrentStopScreen() {
   const itemsCount = stop?.items_count ?? 28;
   const weightKg = stop?.weight_kg ?? 420;
   const volumeM3 = stop?.volume_m3 ?? 2.4;
-  const accessNotes =
-    stop?.access_notes ??
-    'Rear Dock, Enter from Chapel Lane, Van Access Only, Bay 3 reserved';
+  const accessType = stop?.access_type ?? 'Rear Dock';
+  const accessInstructions = stop?.access_instructions ?? 'Enter from Chapel Lane';
+  const vehicleRestriction = stop?.vehicle_restriction ?? 'Van Access Only';
+  const vehicleInstructions = stop?.vehicle_instructions ?? 'Height restriction';
+  const loadingBayWindow = stop?.loading_bay_window ?? '7:45-8:30 AM';
+  const loadingBayNotes = stop?.loading_bay_notes ?? 'Bay 3 reserved for your vehicle';
 
   // Address for navigation
   const fullAddress = locationCity.includes('High Level')
@@ -166,7 +180,8 @@ export default function CurrentStopScreen() {
 
   // Launch phone dialer for store manager
   const handleCallManager = () => {
-    Linking.openURL('tel:+94771234567').catch((err) => {
+    const phoneNumber = manager?.phone ?? '+94771234567';
+    Linking.openURL(`tel:${phoneNumber}`).catch((err) => {
       console.warn('Cannot open phone dialer:', err);
     });
   };
@@ -257,18 +272,18 @@ export default function CurrentStopScreen() {
               }}
             >
               {currentLocation && (
-                <Marker 
-                  coordinate={currentLocation.coords} 
-                  title="You" 
+                <Marker
+                  coordinate={currentLocation.coords}
+                  title="You"
                   pinColor="blue"
                 />
               )}
-              <Marker 
-                coordinate={{ latitude: stop.latitude, longitude: stop.longitude }} 
-                title={storeName} 
+              <Marker
+                coordinate={{ latitude: stop.latitude, longitude: stop.longitude }}
+                title={storeName}
               />
               {currentLocation && (
-                <Polyline 
+                <Polyline
                   coordinates={[
                     currentLocation.coords,
                     { latitude: stop.latitude, longitude: stop.longitude }
@@ -279,7 +294,7 @@ export default function CurrentStopScreen() {
               )}
             </MapView>
           ) : (
-            <View style={{flex: 1, backgroundColor: '#E8ECE4', alignItems: 'center', justifyContent: 'center'}}>
+            <View style={{ flex: 1, backgroundColor: '#E8ECE4', alignItems: 'center', justifyContent: 'center' }}>
               <Text>Location Unavailable</Text>
             </View>
           )}
@@ -323,19 +338,19 @@ export default function CurrentStopScreen() {
       <View style={styles.accessGrid}>
         <AccessCard
           icon="alert"
-          title="Rear Dock"
-          detail="Enter from Chapel Lane"
+          title={accessType}
+          detail={accessInstructions}
           important
         />
         <AccessCard
           icon="navigation"
-          title="Van Access Only"
-          detail="Height restriction"
+          title={vehicleRestriction}
+          detail={vehicleInstructions}
         />
         <AccessCard
           icon="clock"
-          title="Loading Bay: 7:45–8:30 AM"
-          detail="Bay 3 reserved for your vehicle"
+          title={`Loading Bay: ${loadingBayWindow}`}
+          detail={loadingBayNotes}
           wide
         />
       </View>
@@ -343,12 +358,14 @@ export default function CurrentStopScreen() {
       {/* Store Manager Contact Card */}
       <View style={styles.contactCard}>
         <View style={styles.managerAvatar}>
-          <Text style={styles.managerInitials}>NR</Text>
+          <Text style={styles.managerInitials}>
+            {manager?.name ? manager.name.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase() : 'NR'}
+          </Text>
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.managerRoleLabel}>STORE MANAGER</Text>
-          <Text style={styles.managerName}>Nimal Rathnayake</Text>
-          <Text style={styles.managerPhone}>+94 77 123 4567</Text>
+          <Text style={styles.managerName}>{manager?.name ?? 'Nimal Rathnayake'}</Text>
+          <Text style={styles.managerPhone}>{manager?.phone ?? '+94 77 123 4567'}</Text>
         </View>
         <Pressable
           onPress={handleCallManager}
