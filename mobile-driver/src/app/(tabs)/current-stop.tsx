@@ -35,7 +35,27 @@ import {
 } from '@/components/waypoint/ui';
 import { db, initDatabase, type StopRecord, type StoreManagerRecord } from '@/database/schema';
 import { enqueueSyncItem } from '@/database/syncManager';
+import { useLocationStore } from '@/store/locationStore';
 import { Colors, font, Radius, Shadow, W } from '@/utils/theme';
+
+const mapStyleDark = [
+  { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
+  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
+  { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
+  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#263c3f" }] },
+  { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#6b9a76" }] },
+  { featureType: "road", elementType: "geometry", stylers: [{ color: "#38414e" }] },
+  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#212a37" }] },
+  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#9ca5b3" }] },
+  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#746855" }] },
+  { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#1f2835" }] },
+  { featureType: "road.highway", elementType: "labels.text.fill", stylers: [{ color: "#f3d19c" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#17263c" }] },
+  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#515c6d" }] },
+  { featureType: "water", elementType: "labels.text.stroke", stylers: [{ color: "#17263c" }] }
+];
 
 export default function CurrentStopScreen() {
   const insets = useSafeAreaInsets();
@@ -44,8 +64,10 @@ export default function CurrentStopScreen() {
   const [stop, setStop] = useState<StopRecord | null>(null);
   const [manager, setManager] = useState<StoreManagerRecord | null>(null);
   const [totalStopsCount, setTotalStopsCount] = useState<number>(6);
-  const [currentLocation, setCurrentLocation] = useState<Location.LocationObject | null>(null);
   const [distanceKm, setDistanceKm] = useState<string>('...');
+
+  // Reactively use the global GPS location
+  const liveCoords = useLocationStore((state) => state.coords);
 
   // Load stop dynamically from SQLite based on query parameter or active/pending status
   const loadStopData = useCallback(() => {
@@ -109,40 +131,20 @@ export default function CurrentStopScreen() {
     loadStopData();
   }, [loadStopData]);
 
+  // Calculate distance reactively from the shared location store
   useEffect(() => {
-    let locationSubscription: Location.LocationSubscription;
-
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-
-      const loc = await Location.getCurrentPositionAsync({});
-      setCurrentLocation(loc);
-
-      locationSubscription = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.Balanced, timeInterval: 5000, distanceInterval: 10 },
-        (newLoc) => setCurrentLocation(newLoc)
-      );
-    })();
-
-    return () => {
-      if (locationSubscription) locationSubscription.remove();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (currentLocation && stop?.latitude && stop?.longitude) {
+    if (liveCoords && stop?.latitude && stop?.longitude) {
       const R = 6371;
-      const dLat = (stop.latitude - currentLocation.coords.latitude) * Math.PI / 180;
-      const dLon = (stop.longitude - currentLocation.coords.longitude) * Math.PI / 180;
-      const lat1 = currentLocation.coords.latitude * Math.PI / 180;
+      const dLat = (stop.latitude - liveCoords.latitude) * Math.PI / 180;
+      const dLon = (stop.longitude - liveCoords.longitude) * Math.PI / 180;
+      const lat1 = liveCoords.latitude * Math.PI / 180;
       const lat2 = stop.latitude * Math.PI / 180;
       const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
         Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       setDistanceKm((R * c).toFixed(1));
     }
-  }, [currentLocation, stop]);
+  }, [liveCoords, stop]);
 
   // Fallback defaults if SQLite row is loading
   const stopNumberStr = stop ? String(stop.stop_number).padStart(2, '0') : '02';
@@ -192,7 +194,7 @@ export default function CurrentStopScreen() {
         db.runSync("UPDATE stops SET status = 'IN_PROGRESS' WHERE id = ?;", [
           stop.id,
         ]);
-        
+
         // Enqueue the offline sync action for Supabase
         enqueueSyncItem(stop.id, 'STATUS_UPDATE', { status: 'IN_PROGRESS' });
       } catch (err) {
@@ -260,37 +262,51 @@ export default function CurrentStopScreen() {
       </LinearGradient>
 
       {/* 3. Map Snapshot & Direct Navigation */}
-      <Card style={styles.mapCard}>
+      <Card style={[styles.mapCard, { padding: 0 }]}>
         <View style={styles.mapContainer}>
           {(stop?.latitude && stop?.longitude) ? (
             <MapView
               style={StyleSheet.absoluteFill}
-              initialRegion={{
+              showsUserLocation={false}
+              showsMyLocationButton={false}
+              customMapStyle={mapStyleDark}
+              region={{
                 latitude: stop.latitude,
                 longitude: stop.longitude,
-                latitudeDelta: 0.015,
-                longitudeDelta: 0.015,
+                latitudeDelta: 0.04,
+                longitudeDelta: 0.04,
               }}
             >
-              {currentLocation && (
+              {liveCoords && (
                 <Marker
-                  coordinate={currentLocation.coords}
+                  coordinate={{
+                    latitude: liveCoords.latitude,
+                    longitude: liveCoords.longitude,
+                  }}
                   title="You"
-                  pinColor="blue"
-                />
+                  description="Your current location"
+                >
+                  <View style={styles.driverMarker}>
+                    <View style={styles.driverMarkerInner}>
+                      <Icon name="navigation" size={14} color="#FFFFFF" />
+                    </View>
+                  </View>
+                </Marker>
               )}
               <Marker
                 coordinate={{ latitude: stop.latitude, longitude: stop.longitude }}
                 title={storeName}
+                pinColor={Colors.primaryYellow}
               />
-              {currentLocation && (
+              {liveCoords && (
                 <Polyline
                   coordinates={[
-                    currentLocation.coords,
+                    { latitude: liveCoords.latitude, longitude: liveCoords.longitude },
                     { latitude: stop.latitude, longitude: stop.longitude }
                   ]}
-                  strokeColor="#8A5900"
+                  strokeColor={Colors.primaryYellow}
                   strokeWidth={3}
+                  lineDashPattern={[6, 4]}
                 />
               )}
             </MapView>
@@ -879,5 +895,20 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: Colors.textSecondary,
     marginTop: 1,
+  },
+  driverMarker: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  driverMarkerInner: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.primaryYellow,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#1f2835',
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.4)',
   },
 });

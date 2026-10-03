@@ -1,6 +1,7 @@
 import * as Location from 'expo-location';
 import { io, Socket } from 'socket.io-client';
 import { enqueueSyncItem } from '@/database/syncManager';
+import { useLocationStore } from '@/store/locationStore';
 
 // Ideally, this should point to the backend URL via an env variable.
 // For local testing on an emulator, use standard localhost or 10.0.2.2.
@@ -74,6 +75,12 @@ class LocationService {
       speed: location.coords.speed,
       heading: location.coords.heading,
     };
+
+    // Update global store for UI (current-stop.tsx)
+    useLocationStore.getState().setLocation({
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+    });
 
     if (this.socket && this.socket.connected) {
       // Online: Emit directly to WebSocket
