@@ -31,7 +31,7 @@ export interface StoreManagerRecord {
   phone: string;
 }
 
-export type SyncActionType = 'POD_COMPLETE' | 'STATUS_UPDATE';
+export type SyncActionType = 'POD_COMPLETE' | 'STATUS_UPDATE' | 'LOCATION_UPDATE';
 export type SyncStatus = 'PENDING' | 'SYNCED';
 
 export interface SyncPayload {
