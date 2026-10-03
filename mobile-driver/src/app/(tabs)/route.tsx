@@ -464,17 +464,11 @@ export default function RouteScreen() {
 
                   {/* Primary CTA for Current Stop */}
                   {isCurrent && (
-                    <Pressable
-                      onPress={() => handleOpenStop(stop)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Open stop ${stop.stop_number}`}
-                      style={({ pressed }) => [
-                        styles.openStopButton,
-                        pressed && { opacity: 0.88, transform: [{ scale: 0.99 }] },
-                      ]}>
+                    <View
+                      style={styles.openStopButton}>
                       <Text style={styles.openStopButtonText}>Open Stop</Text>
                       <Icon name="chevron" size={16} color={Colors.textPrimary} />
-                    </Pressable>
+                    </View>
                   )}
                 </View>
               </View>

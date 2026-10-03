@@ -2,12 +2,12 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View, Alert } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/waypoint/icon';
 import { Button, Eyebrow, PageTitle, StatusDot, WText } from '@/components/waypoint/ui';
-import { font, Radius, W } from '@/utils/theme';
+import { Colors, font, Radius, Shadow, W } from '@/utils/theme';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function LoginScreen() {
@@ -15,9 +15,10 @@ export default function LoginScreen() {
   const [driverId, setDriverId] = useState('driver');
   const [pin, setPin] = useState('248600');
   const [showPin, setShowPin] = useState(false);
-  const [remember, setRemember] = useState(true);
-  const [focused, setFocused] = useState<'id' | 'pin' | null>(null);
+  const [rememberDevice, setRememberDevice] = useState(true);
+  const [focusedInput, setFocusedInput] = useState<'id' | 'pin' | null>(null);
   const [loading, setLoading] = useState(false);
+  const isOnline = true; // TODO: replace with actual network status hook
 
   const signIn = async () => {
     if (!driverId || !pin) {
@@ -133,8 +134,8 @@ export default function LoginScreen() {
             </View>
           </View>
 
-          <View style={styles.field}>
-            <View style={styles.labelRow}>
+          <View style={styles.fieldContainer}>
+            <View style={styles.fieldLabelRow}>
               <WText size={9} weight={800} color="#4f5154">
                 Secure PIN
               </WText>
