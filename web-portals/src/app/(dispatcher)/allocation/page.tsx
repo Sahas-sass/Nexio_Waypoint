@@ -340,11 +340,13 @@ export default function AllocationPage() {
               <div key={veh.id} className="flex flex-col p-4 bg-white rounded-2xl border border-gray-200 shadow-sm hover:border-gray-300 transition-colors">
                 <div className="flex justify-between items-center mb-4">
                   <div className="flex items-center gap-3.5">
-                    <img 
-                      src={veh.image} 
-                      alt={veh.plateNumber} 
-                      className="w-12 h-12 rounded-[14px] object-contain bg-gray-50 p-1 border border-gray-100 shadow-2xs" 
-                    />
+                    <div className="w-12 h-12 rounded-[14px] overflow-hidden shrink-0 border border-gray-100 bg-gray-100 shadow-2xs">
+                      <img 
+                        src={veh.image} 
+                        alt={veh.plateNumber} 
+                        className="w-full h-full object-cover" 
+                      />
+                    </div>
                     <div className="flex flex-col">
                       <div className="flex items-center gap-2">
                         <span className="text-[14px] font-bold text-waypoint-text leading-tight">{veh.plateNumber}</span>

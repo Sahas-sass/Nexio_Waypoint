@@ -138,8 +138,17 @@ export interface LiveTrackingVehicle {
   delayMinutes: number;
   connectionStatus: ConnectionStatus;
   lastPingAt: string;
-  x: number; // visual SVG coordinate
-  y: number; // visual SVG coordinate
+  x?: number; // visual SVG coordinate fallback
+  y?: number; // visual SVG coordinate fallback
+  stops?: {
+    id: string;
+    sequence: number;
+    storeName: string;
+    address: string;
+    lat: number;
+    lng: number;
+    status: string;
+  }[];
 }
 
 export interface RouteExceptionEvent {

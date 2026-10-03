@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
 import { 
   Search, 
   Calendar, 
@@ -12,8 +13,6 @@ import {
   WifiOff, 
   ChevronRight, 
   SlidersHorizontal, 
-  Plus, 
-  Minus, 
   ArrowRight,
   RefreshCw,
   Loader2
@@ -28,6 +27,16 @@ import {
   RouteExceptionEvent 
 } from "@/app/(dispatcher)/services";
 
+const RealTrackingMap = dynamic(() => import("./RealTrackingMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-130 rounded-3xl bg-[#F8F9FA] border border-[#E8E8E3]/80 shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] flex flex-col items-center justify-center gap-3">
+      <Loader2 className="w-7 h-7 animate-spin text-waypoint-orange" />
+      <p className="text-xs font-bold text-gray-500 tracking-wider uppercase">Loading Live Telemetry Map...</p>
+    </div>
+  )
+});
+
 type FilterTab = "all" | "on-route" | "delayed" | "exceptions";
 
 export default function LiveTrackingPage() {
@@ -40,7 +49,6 @@ export default function LiveTrackingPage() {
   const [activeTab, setActiveTab] = useState<FilterTab>("all");
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>("TRK-024");
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [zoomLevel, setZoomLevel] = useState<number>(1);
 
   // Initial fetch and Realtime Telemetry Subscription
   useEffect(() => {
@@ -134,14 +142,6 @@ export default function LiveTrackingPage() {
     if (activeTab === "exceptions") return vehicle.status === "connectivity-issue" || vehicle.status === "delayed";
     return true;
   });
-
-  const handleZoomIn = () => {
-    setZoomLevel((prev) => Math.min(prev + 0.15, 1.4));
-  };
-
-  const handleZoomOut = () => {
-    setZoomLevel((prev) => Math.max(prev - 0.15, 0.85));
-  };
 
   const todayFormatted = new Date().toLocaleDateString("en-US", {
     weekday: "short",
@@ -297,350 +297,17 @@ export default function LiveTrackingPage() {
       {/* 3. MIDDLE SECTION: LIVE MAP + ACTIVE ROUTES */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
         
-        {/* MAP CONTAINER (8 COLS) */}
-        <div className="lg:col-span-8 relative rounded-3xl overflow-hidden border border-[#E8E8E3]/90 bg-[#F1F3EC] shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] min-h-125 flex flex-col justify-between p-6 select-none">
-          
-          {/* Top Controls: Filter Pills (Left) & Zoom Controls (Right) */}
-          <div className="relative z-10 flex items-center justify-between pointer-events-auto">
-            {/* Filter Pills */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => setActiveTab("all")}
-                className={`px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all ${
-                  activeTab === "all"
-                    ? "bg-waypoint-text text-white shadow-sm"
-                    : "bg-white/80 backdrop-blur-xs hover:bg-white text-gray-600 border border-gray-200/70"
-                }`}
-              >
-                All Vehicles ({vehicles.length})
-              </button>
-
-              <button
-                onClick={() => setActiveTab("on-route")}
-                className={`px-3.5 py-1.5 rounded-xl font-semibold text-xs transition-all ${
-                  activeTab === "on-route"
-                    ? "bg-waypoint-text text-white shadow-sm"
-                    : "bg-white/80 backdrop-blur-xs hover:bg-white text-gray-600 border border-gray-200/70"
-                }`}
-              >
-                On Route ({vehicles.filter(v => v.status === "on-schedule").length})
-              </button>
-
-              <button
-                onClick={() => setActiveTab("delayed")}
-                className={`px-3 py-1.5 rounded-xl font-semibold text-xs flex items-center gap-1.5 transition-all ${
-                  activeTab === "delayed"
-                    ? "bg-waypoint-text text-white shadow-sm"
-                    : "bg-white/80 backdrop-blur-xs hover:bg-white text-gray-600 border border-gray-200/70"
-                }`}
-              >
-                <span>Delayed</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                  activeTab === "delayed" ? "bg-amber-400 text-black" : "bg-[#FFF8E6] text-amber-700"
-                }`}>
-                  {delayedCount}
-                </span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab("exceptions")}
-                className={`px-3 py-1.5 rounded-xl font-semibold text-xs flex items-center gap-1.5 transition-all ${
-                  activeTab === "exceptions"
-                    ? "bg-waypoint-text text-white shadow-sm"
-                    : "bg-white/80 backdrop-blur-xs hover:bg-white text-gray-600 border border-gray-200/70"
-                }`}
-              >
-                <span>Exceptions</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                  activeTab === "exceptions" ? "bg-orange-400 text-white" : "bg-orange-100 text-orange-700"
-                }`}>
-                  {exceptionCount}
-                </span>
-              </button>
-            </div>
-
-            {/* Zoom Controls */}
-            <div className="bg-white/90 backdrop-blur-xs rounded-xl border border-gray-200/80 shadow-sm flex flex-col overflow-hidden">
-              <button 
-                onClick={handleZoomIn}
-                className="w-8 h-8 flex items-center justify-center text-gray-700 hover:bg-gray-100 transition-colors"
-                title="Zoom in"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-              <div className="h-px bg-gray-200 w-full" />
-              <button 
-                onClick={handleZoomOut}
-                className="w-8 h-8 flex items-center justify-center text-gray-700 hover:bg-gray-100 transition-colors"
-                title="Zoom out"
-              >
-                <Minus className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* SVG MAP GRAPHIC CANVAS */}
-          <div className="absolute inset-0 z-0 flex items-center justify-center overflow-hidden">
-            <div 
-              className="w-full h-full transition-transform duration-300 ease-out origin-center"
-              style={{ transform: `scale(${zoomLevel})` }}
-            >
-              <svg 
-                viewBox="0 0 920 480" 
-                className="w-full h-full"
-                preserveAspectRatio="xMidYMid meet"
-              >
-                <defs>
-                  {/* Highway Ribbon Shadow Filter */}
-                  <filter id="roadShadow" x="-10%" y="-10%" width="120%" height="120%">
-                    <feDropShadow dx="0" dy="4" stdDeviation="6" floodColor="#202124" floodOpacity="0.06" />
-                  </filter>
-                  <filter id="pinShadow" x="-20%" y="-20%" width="140%" height="140%">
-                    <feDropShadow dx="0" dy="3" stdDeviation="3" floodColor="#000000" floodOpacity="0.15" />
-                  </filter>
-                </defs>
-
-                {/* --- 1. Soft Topographic Background Curves --- */}
-                <path
-                  d="M-50,120 Q180,60 400,110 T950,70 L950,-50 L-50,-50 Z"
-                  fill="#EAEFE5"
-                  opacity="0.75"
-                />
-                <path
-                  d="M-50,380 Q250,310 500,360 T950,320 L950,520 L-50,520 Z"
-                  fill="#E8EDE2"
-                  opacity="0.7"
-                />
-                <path
-                  d="M-50,260 Q150,190 350,230 T850,210 L950,220 L950,350 Q600,420 300,380 Z"
-                  fill="#E3E8DB"
-                  opacity="0.45"
-                />
-
-                {/* --- 2. District Names --- */}
-                <text 
-                  x="285" 
-                  y="160" 
-                  fill="#78806F" 
-                  fontSize="11" 
-                  fontWeight="700" 
-                  letterSpacing="0.22em"
-                  className="uppercase select-none"
-                >
-                  NORTH DISTRICT
-                </text>
-
-                <text 
-                  x="385" 
-                  y="235" 
-                  fill="#78806F" 
-                  fontSize="11" 
-                  fontWeight="700" 
-                  letterSpacing="0.22em"
-                  className="uppercase select-none"
-                >
-                  CENTRAL MARKET
-                </text>
-
-                <text 
-                  x="640" 
-                  y="385" 
-                  fill="#78806F" 
-                  fontSize="11" 
-                  fontWeight="700" 
-                  letterSpacing="0.22em"
-                  className="uppercase select-none"
-                >
-                  HARBOR POINT
-                </text>
-
-                {/* --- 3. Highway Road Ribbons (Smooth White Corridors) --- */}
-                {/* North Highway Ribbon */}
-                <path
-                  d="M 230 170 C 340 180, 480 200, 620 180 C 720 165, 820 120, 880 110"
-                  fill="none"
-                  stroke="#FFFFFF"
-                  strokeWidth="38"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  filter="url(#roadShadow)"
-                />
-
-                {/* Central & Harbor Main Highway Ribbon */}
-                <path
-                  d="M 60 320 C 180 310, 240 250, 360 250 C 470 250, 520 300, 640 330 C 720 350, 800 320, 880 300"
-                  fill="none"
-                  stroke="#FFFFFF"
-                  strokeWidth="42"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  filter="url(#roadShadow)"
-                />
-
-                {/* --- 4. Dynamic Route Traces (Dotted Paths) --- */}
-                {/* Blue Dotted Route (North District - TRK-019) */}
-                <path
-                  d="M 235 170 C 340 180, 480 200, 620 180 C 720 165, 820 120, 880 110"
-                  fill="none"
-                  stroke="#0284C7"
-                  strokeWidth="3.5"
-                  strokeDasharray="4 6"
-                  strokeLinecap="round"
-                  opacity={activeTab === "delayed" ? 0.3 : 1}
-                />
-
-                {/* Yellow/Amber Dotted Route (Central Market - TRK-024) */}
-                <path
-                  d="M 60 320 C 180 310, 240 250, 360 250 C 470 250, 520 300, 640 330"
-                  fill="none"
-                  stroke="#F59E0B"
-                  strokeWidth="3.5"
-                  strokeDasharray="4 6"
-                  strokeLinecap="round"
-                  opacity={activeTab === "exceptions" || activeTab === "delayed" ? 0.3 : 1}
-                />
-
-                {/* Orange Dotted Route (Harbor Point - VAN-012) */}
-                <path
-                  d="M 520 300 C 600 325, 680 345, 800 325"
-                  fill="none"
-                  stroke="#F97316"
-                  strokeWidth="3.5"
-                  strokeDasharray="4 6"
-                  strokeLinecap="round"
-                  opacity={activeTab === "on-route" ? 0.3 : 1}
-                />
-
-                {/* --- 5. Waypoint Stop Pin Markers --- */}
-                {/* Pin 1: West Depot Start */}
-                <g transform="translate(170, 305)" filter="url(#pinShadow)">
-                  <circle cx="0" cy="0" r="13" fill="#FFFFFF" />
-                  <circle cx="0" cy="0" r="8" fill="#F4F4F0" stroke="#E2E4DC" strokeWidth="1.5" />
-                  <circle cx="0" cy="0" r="3.5" fill="#202124" />
-                </g>
-
-                {/* Pin 2: Central Market Stop */}
-                <g transform="translate(510, 245)" filter="url(#pinShadow)">
-                  <circle cx="0" cy="0" r="13" fill="#FFFFFF" />
-                  <circle cx="0" cy="0" r="8" fill="#F4F4F0" stroke="#E2E4DC" strokeWidth="1.5" />
-                  <circle cx="0" cy="0" r="3.5" fill="#202124" />
-                </g>
-
-                {/* Pin 3: Harbor Point Stop */}
-                <g transform="translate(685, 335)" filter="url(#pinShadow)">
-                  <circle cx="0" cy="0" r="13" fill="#FFFFFF" />
-                  <circle cx="0" cy="0" r="8" fill="#F4F4F0" stroke="#E2E4DC" strokeWidth="1.5" />
-                  <circle cx="0" cy="0" r="3.5" fill="#202124" />
-                </g>
-
-                {/* --- 6. Live Vehicle Markers (Interactive Map Telemetry) --- */}
-                {vehicles.map((v) => {
-                  const isSelected = selectedVehicleId === v.id;
-                  const x = v.x || (v.id === "TRK-024" ? 340 : v.id === "VAN-012" ? 620 : 350);
-                  const y = v.y || (v.id === "TRK-024" ? 255 : v.id === "VAN-012" ? 325 : 185);
-                  
-                  const isDelayed = v.status === "delayed";
-                  const isConnIssue = v.status === "connectivity-issue";
-
-                  const markerBg = isSelected 
-                    ? "#FFC83D" 
-                    : isDelayed 
-                    ? "#F97316" 
-                    : isConnIssue 
-                    ? "#7DD3FC" 
-                    : "#F59E0B";
-
-                  const pulseBg = isSelected 
-                    ? "#FBBF24" 
-                    : isDelayed 
-                    ? "#F97316" 
-                    : isConnIssue 
-                    ? "#BAE6FD" 
-                    : "#FDE68A";
-
-                  const strokeColor = isSelected ? "#202124" : isDelayed ? "#FFFFFF" : isConnIssue ? "#0369A1" : "#FFFFFF";
-
-                  return (
-                    <g 
-                      key={v.id} 
-                      transform={`translate(${x}, ${y})`} 
-                      className="cursor-pointer transition-all duration-300"
-                      onClick={() => setSelectedVehicleId(v.id)}
-                    >
-                      {/* Pulsing ring */}
-                      <circle 
-                        cx="0" 
-                        cy="0" 
-                        r={isSelected ? 28 : 22} 
-                        fill={pulseBg} 
-                        opacity="0.35" 
-                        className="animate-pulse" 
-                      />
-                      
-                      {/* Vehicle Marker Badge */}
-                      <rect 
-                        x={isSelected ? -18 : -16} 
-                        y={isSelected ? -18 : -16} 
-                        width={isSelected ? 36 : 32} 
-                        height={isSelected ? 36 : 32} 
-                        rx={isSelected ? 12 : 10} 
-                        fill={markerBg} 
-                        stroke="#FFFFFF" 
-                        strokeWidth="2.5" 
-                        filter="url(#pinShadow)"
-                      />
-
-                      {/* Truck SVG Icon */}
-                      <g 
-                        transform={`translate(${isSelected ? -9 : -8}, ${isSelected ? -9 : -8}) scale(${isSelected ? 0.75 : 0.65})`} 
-                        fill="none" 
-                        stroke={strokeColor} 
-                        strokeWidth="2" 
-                        strokeLinecap="round" 
-                        strokeLinejoin="round"
-                      >
-                        <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2" />
-                        <path d="M15 18H9" />
-                        <path d="M19 18h2a1 1 0 0 0 1-1v-5l-3-4h-5v10" />
-                        <circle cx="7" cy="18" r="2" />
-                        <circle cx="17" cy="18" r="2" />
-                      </g>
-
-                      {/* Tag Pill for Selected Vehicle */}
-                      {isSelected && (
-                        <g transform="translate(24, -10)">
-                          <rect x="0" y="0" width="58" height="20" rx="6" fill="#202124" />
-                          <text x="29" y="14" fill="#FFFFFF" fontSize="9.5" fontWeight="700" textAnchor="middle">
-                            {v.name}
-                          </text>
-                        </g>
-                      )}
-                    </g>
-                  );
-                })}
-
-              </svg>
-            </div>
-          </div>
-
-          {/* Bottom Legend Pill (Translucent Glass) */}
-          <div className="relative z-10 pointer-events-auto">
-            <div className="inline-flex items-center gap-4 px-4 py-2 bg-white/85 backdrop-blur-md rounded-full border border-gray-200/70 shadow-xs text-[11px] font-medium text-gray-600">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                <span>On route</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-orange-500"></span>
-                <span>Delayed</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-sky-500"></span>
-                <span>Connectivity</span>
-              </div>
-            </div>
-          </div>
-
+        {/* REAL INTERACTIVE TELEMETRY MAP (8 COLS) */}
+        <div className="lg:col-span-8">
+          <RealTrackingMap
+            vehicles={vehicles}
+            selectedVehicleId={selectedVehicleId}
+            onSelectVehicle={setSelectedVehicleId}
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            delayedCount={delayedCount}
+            exceptionCount={exceptionCount}
+          />
         </div>
 
         {/* ACTIVE ROUTES LIST (4 COLS) */}
@@ -683,11 +350,11 @@ export default function LiveTrackingPage() {
                   >
                     {/* Top Row: Vehicle Image & ID & Chevron */}
                     <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-xl bg-gray-100 overflow-hidden shrink-0 flex items-center justify-center p-1 border border-gray-100">
+                      <div className="w-11 h-11 rounded-xl bg-gray-100 overflow-hidden shrink-0 border border-gray-100 shadow-2xs">
                         <img 
                           src={vehicle.image} 
                           alt={vehicle.name} 
-                          className="w-full h-full object-contain"
+                          className="w-full h-full object-cover"
                         />
                       </div>
                       

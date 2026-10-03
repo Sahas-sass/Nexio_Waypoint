@@ -34,8 +34,8 @@ UPDATE public.trips
 SET 
   status = 'en_route',
   current_district = 'Central Market',
-  current_lat = 6.9271,
-  current_lng = 79.8612,
+  current_lat = 6.9185,
+  current_lng = 79.8640,
   delay_minutes = 0,
   connection_status = 'online',
   eta_time = '7:42 AM',
@@ -47,8 +47,8 @@ UPDATE public.trips
 SET 
   status = 'en_route',
   current_district = 'Harbor Point',
-  current_lat = 6.9380,
-  current_lng = 79.8500,
+  current_lat = 6.9385,
+  current_lng = 79.8480,
   delay_minutes = 12,
   connection_status = 'delayed',
   eta_time = '9:18 AM',
@@ -60,13 +60,21 @@ UPDATE public.trips
 SET 
   status = 'en_route',
   current_district = 'North District',
-  current_lat = 6.9600,
-  current_lng = 79.8700,
+  current_lat = 6.9680,
+  current_lng = 79.8720,
   delay_minutes = 0,
   connection_status = 'offline',
   eta_time = 'Last update 6 min ago',
   last_ping_at = now() - interval '6 minutes'
 WHERE vehicle_id = '3c80c48e-5cf9-45f8-94cd-4fe34ac2199a'; -- TRK-019
+
+-- Loading / Depot Trips: Set to Peliyagoda Central Depot
+UPDATE public.trips
+SET
+  current_district = 'Central Depot',
+  current_lat = 6.9530,
+  current_lng = 79.8820
+WHERE status IN ('loading', 'planning');
 
 -- 4. Seed Live Route Exceptions (Powers /tracking feed)
 DELETE FROM public.route_exceptions;

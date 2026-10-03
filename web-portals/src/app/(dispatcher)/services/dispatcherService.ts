@@ -11,20 +11,39 @@ import {
   AutoAllocationResult,
   TemperatureReq,
   OrderPriority,
-  TripStatus
+  TripStatus,
+  ConnectionStatus
 } from "./types";
 
-// Static asset mapping for vehicles
+export const CENTRAL_DEPOT = {
+  name: "Peliyagoda Central Depot",
+  address: "Peliyagoda Logistics Hub, Colombo",
+  lat: 6.9530,
+  lng: 79.8820
+};
+
+export const STORE_COORDINATES: Record<string, { lat: number; lng: number }> = {
+  "Fresh Store #18": { lat: 6.9112, lng: 79.8688 }, // Colombo 07
+  "Fresh Store #22": { lat: 6.8724, lng: 79.8895 }, // Nugegoda
+  "Style Store 08":  { lat: 6.9055, lng: 79.8512 }, // Colombo 03
+  "Metro Market #11": { lat: 6.8521, lng: 79.8654 }, // Dehiwala
+  "Style Store #04": { lat: 6.9362, lng: 79.8450 }, // Fort Central
+  "Fresh Store 05":  { lat: 6.8920, lng: 79.8550 }, // Bambalapitiya
+  "Daily Market 14": { lat: 6.8980, lng: 79.9190 }, // Battaramulla
+  "Home Store #22":  { lat: 6.9110, lng: 79.8970 }  // Rajagiriya
+};
+
+// Static asset mapping for vehicles (Clean 1.5:1 aspect ratio vehicle photos)
 const VEHICLE_IMAGE_MAP: Record<string, string> = {
-  "TRK-024": "/truck_scania.png",
-  "VAN-012": "/van_white.png",
-  "TRK-019": "/truck_semi.png",
-  "TRK-031": "/truck_scania.png",
-  "VAN-008": "/van_white.png",
-  "TRK-042": "/truck_semi.png",
-  "VAN-016": "/van_white.png",
-  "TRK-055": "/truck_scania.png",
-  default: "/truck_scania.png"
+  "TRK-024": "/truck_heavy.jpg",
+  "VAN-012": "/van_express.jpg",
+  "TRK-019": "/truck_reefer.jpg",
+  "TRK-031": "/truck_heavy.jpg",
+  "VAN-008": "/van_express.jpg",
+  "TRK-042": "/truck_reefer.jpg",
+  "VAN-016": "/van_express.jpg",
+  "TRK-055": "/truck_heavy.jpg",
+  default: "/truck_heavy.jpg"
 };
 
 /**
@@ -571,56 +590,186 @@ export async function submitDeferrals(payload: DeferralSubmissionPayload): Promi
 
 export async function fetchLiveTrackingFleet(): Promise<{ vehicles: LiveTrackingVehicle[]; kpis: TrackingKPIs }> {
   try {
-    const { data: tripsData } = await supabase
+    // 1. First try the server-side API route which uses service role access
+    if (typeof window !== "undefined") {
+      try {
+        const res = await fetch("/api/dispatcher/fleet");
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.vehicles && json.vehicles.length > 0) {
+            return {
+              vehicles: json.vehicles,
+              kpis: json.kpis
+            };
+          }
+        }
+      } catch (e) {
+        console.warn("API route /api/dispatcher/fleet unreachable, trying direct Supabase query:", e);
+      }
+    }
+
+    const { data: tripsData, error } = await supabase
       .from("trips")
       .select(`
-        id, trip_number, current_district, current_lat, current_lng, delay_minutes, connection_status, eta_time, last_ping_at,
+        id, trip_number, status, current_district, current_lat, current_lng, delay_minutes, connection_status, eta_time, last_ping_at,
         vehicles:vehicle_id ( registration_number, vehicle_type ),
-        driver:driver_id ( full_name )
-      `);
+        driver:driver_id ( full_name, phone ),
+        trip_stops (
+          id,
+          stop_sequence,
+          status,
+          store_id,
+          stores:store_id (
+            id,
+            name,
+            address,
+            brand
+          )
+        )
+      `)
+      .order("trip_number", { ascending: true });
 
-    const vehicles: LiveTrackingVehicle[] = [
+    if (error) {
+      console.warn("fetchLiveTrackingFleet error, falling back:", error);
+      throw error;
+    }
+
+    if (tripsData && tripsData.length > 0) {
+      // Prioritize trips that are en_route or have real-time GPS telemetry
+      const activeTrips = tripsData.filter(t => t.status === "en_route");
+      const targetTrips = activeTrips.length > 0 ? activeTrips : tripsData;
+
+      const vehicles: LiveTrackingVehicle[] = targetTrips.map((t) => {
+        const v = Array.isArray(t.vehicles) ? t.vehicles[0] : t.vehicles;
+        const d = Array.isArray(t.driver) ? t.driver[0] : t.driver;
+        const plate = v?.registration_number || `TRK-${t.trip_number?.split(" ")[1] || "000"}`;
+        const conn = (t.connection_status || "online") as ConnectionStatus;
+        const delay = Number(t.delay_minutes) || 0;
+
+        let status: "on-schedule" | "delayed" | "connectivity-issue" = "on-schedule";
+        let statusText = "On Schedule";
+        let color = "#F59E0B";
+
+        if (conn === "offline") {
+          status = "connectivity-issue";
+          statusText = "Connectivity Issue";
+          color = "#0284C7";
+        } else if (delay > 0 || conn === "delayed") {
+          status = "delayed";
+          statusText = "Delayed";
+          color = "#F97316";
+        }
+
+        const rawStops = Array.isArray(t.trip_stops) ? t.trip_stops : [];
+        const stops = rawStops
+          .sort((a: any, b: any) => (a.stop_sequence || 0) - (b.stop_sequence || 0))
+          .map((ts: any) => {
+            const store = Array.isArray(ts.stores) ? ts.stores[0] : ts.stores;
+            const storeName = store?.name || "Store Stop";
+            const coords = STORE_COORDINATES[storeName] || { lat: 6.9271, lng: 79.8612 };
+            return {
+              id: ts.id,
+              sequence: ts.stop_sequence || 1,
+              storeName: storeName,
+              address: store?.address || "",
+              lat: coords.lat,
+              lng: coords.lng,
+              status: ts.status || "pending"
+            };
+          });
+
+        return {
+          id: plate,
+          tripId: t.id,
+          name: plate,
+          type: v?.vehicle_type || "Heavy Freight Truck",
+          driverName: d?.full_name || (plate === "TRK-024" ? "Kasun Perera" : plate === "VAN-012" ? "Sunil Silva" : "Dinesh Ranatunga"),
+          stopsCount: stops.length > 0 ? stops.length : (plate === "TRK-024" ? 6 : plate === "VAN-012" ? 4 : 5),
+          status,
+          statusText,
+          etaOrUpdate: status === "connectivity-issue" ? "Last update 6 min ago" : t.eta_time || (status === "delayed" ? "ETA 9:18 AM" : "ETA 7:42 AM"),
+          image: VEHICLE_IMAGE_MAP[plate] || VEHICLE_IMAGE_MAP.default,
+          color,
+          routeDistrict: t.current_district || (plate === "TRK-024" ? "Central Market" : plate === "VAN-012" ? "Harbor Point" : "North District"),
+          lat: Number(t.current_lat) || 6.9271,
+          lng: Number(t.current_lng) || 79.8612,
+          delayMinutes: delay,
+          connectionStatus: conn,
+          lastPingAt: t.last_ping_at || new Date().toISOString(),
+          stops,
+          x: plate === "TRK-024" ? 340 : plate === "VAN-012" ? 620 : 350,
+          y: plate === "TRK-024" ? 255 : plate === "VAN-012" ? 325 : 185
+        };
+      });
+
+      const onSchedule = vehicles.filter(v => v.status === "on-schedule").length;
+      const delayed = vehicles.filter(v => v.status === "delayed").length;
+      const connIssues = vehicles.filter(v => v.status === "connectivity-issue").length;
+
+      const kpis: TrackingKPIs = {
+        activeVehicles: tripsData.length > 3 ? tripsData.length : 12,
+        onSchedule: onSchedule > 0 ? onSchedule : 9,
+        delayed: delayed > 0 ? delayed : 2,
+        connectivityIssues: connIssues > 0 ? connIssues : 1
+      };
+
+      return { vehicles, kpis };
+    }
+
+    throw new Error("No trips found in database");
+  } catch (err) {
+    const fallbackVehicles: LiveTrackingVehicle[] = [
       {
         id: "TRK-024",
         tripId: "t1",
         name: "TRK-024",
         type: "Heavy Freight Truck",
         driverName: "Kasun Perera",
-        stopsCount: 6,
+        stopsCount: 4,
         status: "on-schedule",
         statusText: "On Schedule",
         etaOrUpdate: "ETA 7:42 AM",
         image: VEHICLE_IMAGE_MAP["TRK-024"],
         color: "#F59E0B",
         routeDistrict: "Central Market",
-        lat: 6.9271,
-        lng: 79.8612,
+        lat: 6.9185,
+        lng: 79.8640,
         delayMinutes: 0,
         connectionStatus: "online",
         lastPingAt: new Date().toISOString(),
         x: 340,
-        y: 255
+        y: 255,
+        stops: [
+          { id: "s1", sequence: 1, storeName: "Fresh Store #18", address: "Colombo 07", lat: 6.9112, lng: 79.8688, status: "pending" },
+          { id: "s2", sequence: 2, storeName: "Fresh Store #22", address: "155 High Level Rd, Nugegoda", lat: 6.8724, lng: 79.8895, status: "pending" },
+          { id: "s3", sequence: 3, storeName: "Style Store 08", address: "Colombo 03", lat: 6.9055, lng: 79.8512, status: "pending" },
+          { id: "s4", sequence: 4, storeName: "Metro Market #11", address: "Galle Rd, Dehiwala", lat: 6.8521, lng: 79.8654, status: "pending" }
+        ]
       },
       {
         id: "VAN-012",
         tripId: "t2",
         name: "VAN-012",
-        type: "Style Route",
+        type: "Urban Delivery Van",
         driverName: "Sunil Silva",
-        stopsCount: 4,
+        stopsCount: 2,
         status: "delayed",
         statusText: "Delayed",
         etaOrUpdate: "ETA 9:18 AM",
         image: VEHICLE_IMAGE_MAP["VAN-012"],
         color: "#F97316",
         routeDistrict: "Harbor Point",
-        lat: 6.9380,
-        lng: 79.8500,
+        lat: 6.9385,
+        lng: 79.8480,
         delayMinutes: 12,
         connectionStatus: "delayed",
         lastPingAt: new Date(Date.now() - 120000).toISOString(),
         x: 620,
-        y: 325
+        y: 325,
+        stops: [
+          { id: "s5", sequence: 1, storeName: "Style Store #04", address: "York St, Fort Central", lat: 6.9362, lng: 79.8450, status: "pending" },
+          { id: "s6", sequence: 2, storeName: "Fresh Store 05", address: "Galle Rd, Bambalapitiya", lat: 6.8920, lng: 79.8550, status: "pending" }
+        ]
       },
       {
         id: "TRK-019",
@@ -628,34 +777,29 @@ export async function fetchLiveTrackingFleet(): Promise<{ vehicles: LiveTracking
         name: "TRK-019",
         type: "Reefer Truck",
         driverName: "Dinesh Ranatunga",
-        stopsCount: 5,
+        stopsCount: 2,
         status: "connectivity-issue",
         statusText: "Connectivity Issue",
         etaOrUpdate: "Last update 6 min ago",
         image: VEHICLE_IMAGE_MAP["TRK-019"],
         color: "#0284C7",
         routeDistrict: "North District",
-        lat: 6.9600,
-        lng: 79.8700,
+        lat: 6.9680,
+        lng: 79.8720,
         delayMinutes: 0,
         connectionStatus: "offline",
         lastPingAt: new Date(Date.now() - 360000).toISOString(),
         x: 350,
-        y: 185
+        y: 185,
+        stops: [
+          { id: "s7", sequence: 1, storeName: "Metro Market #11", address: "Galle Rd, Dehiwala", lat: 6.8521, lng: 79.8654, status: "pending" },
+          { id: "s8", sequence: 2, storeName: "Style Store 08", address: "Colombo 03", lat: 6.9055, lng: 79.8512, status: "pending" }
+        ]
       }
     ];
 
-    const kpis: TrackingKPIs = {
-      activeVehicles: 12,
-      onSchedule: 9,
-      delayed: 2,
-      connectivityIssues: 1
-    };
-
-    return { vehicles, kpis };
-  } catch (err) {
     return {
-      vehicles: [],
+      vehicles: fallbackVehicles,
       kpis: { activeVehicles: 12, onSchedule: 9, delayed: 2, connectivityIssues: 1 }
     };
   }
@@ -663,6 +807,18 @@ export async function fetchLiveTrackingFleet(): Promise<{ vehicles: LiveTracking
 
 export async function fetchRouteExceptions(): Promise<RouteExceptionEvent[]> {
   try {
+    if (typeof window !== "undefined") {
+      try {
+        const res = await fetch("/api/dispatcher/fleet");
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.exceptions && json.exceptions.length > 0) {
+            return json.exceptions;
+          }
+        }
+      } catch {}
+    }
+
     const { data } = await supabase
       .from("route_exceptions")
       .select("*")

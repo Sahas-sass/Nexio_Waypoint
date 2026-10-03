@@ -56,7 +56,11 @@ export default function CommandCenterPage() {
     o.orderNumber.toLowerCase().includes(searchQuery.toLowerCase())
   ) || [];
 
-  const fleetCapacityBreakdown = data?.fleetCapacityBreakdown || [];
+  const fleetCapacityBreakdown = (data?.fleetCapacityBreakdown || []).filter(v =>
+    !searchQuery ||
+    v.plate.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    v.model.toLowerCase().includes(searchQuery.toLowerCase())
+  );
   const operationalAlerts = data?.operationalAlerts || [];
 
   return (
@@ -316,20 +320,26 @@ export default function CommandCenterPage() {
           {/* Vehicle List */}
           <div className="flex flex-col gap-5">
             {fleetCapacityBreakdown.map((veh) => (
-              <div key={veh.id} className="flex flex-col gap-3 pb-5 border-b border-[#E8E8E3]/60 last:border-b-0 last:pb-0">
+              <div 
+                key={veh.id} 
+                onClick={() => router.push("/allocation")}
+                className="flex flex-col gap-3 pb-5 border-b border-[#E8E8E3]/60 last:border-b-0 last:pb-0 cursor-pointer group hover:bg-gray-50/40 p-1.5 -m-1.5 rounded-2xl transition-all"
+              >
                 <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-3.5">
-                    <img 
-                      src={veh.image} 
-                      alt={veh.plate} 
-                      className="w-11 h-11 rounded-[14px] object-contain bg-gray-50 p-1 border border-gray-100 shadow-2xs" 
-                    />
-                    <div className="flex flex-col pt-0.5">
-                      <span className="text-[14px] font-bold text-waypoint-text leading-tight">{veh.plate}</span>
-                      <span className="text-[12px] font-medium text-gray-400 mt-0.5 truncate max-w-32.5">{veh.model}</span>
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <div className="w-12 h-12 rounded-[14px] overflow-hidden shrink-0 border border-gray-100 bg-gray-100 shadow-2xs group-hover:ring-2 group-hover:ring-waypoint-yellow/60 transition-all">
+                      <img 
+                        src={veh.image} 
+                        alt={veh.plate} 
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
+                      />
+                    </div>
+                    <div className="flex flex-col pt-0.5 min-w-0">
+                      <span className="text-[14px] font-bold text-waypoint-text leading-tight group-hover:text-waypoint-orange transition-colors">{veh.plate}</span>
+                      <span className="text-[12px] font-medium text-gray-400 mt-0.5 truncate max-w-44">{veh.model}</span>
                     </div>
                   </div>
-                  <span className="text-[15px] font-bold text-waypoint-text">{veh.volumePercent}%</span>
+                  <span className="text-[15px] font-bold text-waypoint-text shrink-0">{veh.volumePercent}%</span>
                 </div>
                 <div className="flex flex-col gap-2.5 pl-1">
                   <div className="flex items-center gap-3">
@@ -355,6 +365,12 @@ export default function CommandCenterPage() {
                 </div>
               </div>
             ))}
+
+            {fleetCapacityBreakdown.length === 0 && (
+              <div className="text-center py-6 text-gray-400 text-xs">
+                No vehicles matching "{searchQuery}"
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -380,25 +396,23 @@ export default function CommandCenterPage() {
           {operationalAlerts.map((alert) => (
             <div 
               key={alert.id}
-              className={`flex min-h-20 p-3.5 items-center gap-3.5 rounded-[20px] border-[1.6px] border-[#E8E8E3] transition-colors ${
+              onClick={() => router.push(alert.type === "review" ? "/deferrals" : "/allocation")}
+              className={`flex min-h-20 p-3.5 items-center gap-3.5 rounded-[20px] border-[1.6px] border-[#E8E8E3] transition-all cursor-pointer hover:border-amber-300 hover:shadow-xs group ${
                 alert.type === "time" ? "bg-[#FFFCF5]" : "bg-white"
               }`}
             >
-              <div className="w-11 h-11 bg-[#FFF8E6] text-waypoint-orange rounded-[14px] flex items-center justify-center shrink-0">
+              <div className="w-11 h-11 bg-[#FFF8E6] text-waypoint-orange rounded-[14px] flex items-center justify-center shrink-0 group-hover:bg-[#FEF3C7] transition-colors">
                 {alert.type === "capacity" && <BarChart2 className="w-5 h-5" strokeWidth={2} />}
                 {alert.type === "time" && <Clock className="w-5 h-5" strokeWidth={2} />}
                 {alert.type === "review" && <AlertTriangle className="w-5 h-5" strokeWidth={2} />}
               </div>
               <div className="flex flex-col flex-1 min-w-0">
-                <p className="text-[13px] font-bold text-waypoint-text leading-tight mb-0.5 truncate">{alert.title}</p>
+                <p className="text-[13px] font-bold text-waypoint-text leading-tight mb-0.5 truncate group-hover:text-amber-800 transition-colors">{alert.title}</p>
                 <p className="text-[11px] font-medium text-gray-400 truncate">{alert.description}</p>
               </div>
-              <button 
-                onClick={() => router.push(alert.type === "review" ? "/deferrals" : "/allocation")}
-                className="w-8 h-8 rounded-full border border-gray-200 flex items-center justify-center text-waypoint-text hover:bg-gray-50 transition-colors shrink-0 cursor-pointer"
-              >
+              <div className="w-8 h-8 rounded-full border border-gray-200 flex items-center justify-center text-waypoint-text group-hover:bg-waypoint-yellow group-hover:border-waypoint-yellow transition-colors shrink-0">
                 <ArrowRight className="w-4 h-4" />
-              </button>
+              </div>
             </div>
           ))}
         </div>
