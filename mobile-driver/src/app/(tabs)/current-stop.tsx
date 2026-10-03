@@ -9,8 +9,20 @@ import {
   Text,
   View,
 } from 'react-native';
+import * as Location from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, Path, Pattern, Rect } from 'react-native-svg';
+
+// react-native-maps is native-only; lazy-require to avoid web crash
+let MapView: any = View;
+let Marker: any = View;
+let Polyline: any = View;
+if (Platform.OS !== 'web') {
+  const Maps = require('react-native-maps');
+  MapView = Maps.default;
+  Marker = Maps.Marker;
+  Polyline = Maps.Polyline;
+}
 
 import { Screen } from '@/components/waypoint/chrome';
 import { Icon, type IconName } from '@/components/waypoint/icon';
@@ -21,15 +33,41 @@ import {
   SectionHeading,
   TitleRow,
 } from '@/components/waypoint/ui';
-import { db, initDatabase, type StopRecord } from '@/database/schema';
+import { db, initDatabase, type StopRecord, type StoreManagerRecord } from '@/database/schema';
+import { enqueueSyncItem } from '@/database/syncManager';
+import { useLocationStore } from '@/store/locationStore';
 import { Colors, font, Radius, Shadow, W } from '@/utils/theme';
+
+const mapStyleDark = [
+  { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
+  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
+  { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
+  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#263c3f" }] },
+  { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#6b9a76" }] },
+  { featureType: "road", elementType: "geometry", stylers: [{ color: "#38414e" }] },
+  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#212a37" }] },
+  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#9ca5b3" }] },
+  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#746855" }] },
+  { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#1f2835" }] },
+  { featureType: "road.highway", elementType: "labels.text.fill", stylers: [{ color: "#f3d19c" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#17263c" }] },
+  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#515c6d" }] },
+  { featureType: "water", elementType: "labels.text.stroke", stylers: [{ color: "#17263c" }] }
+];
 
 export default function CurrentStopScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ stop?: string; stopId?: string }>();
 
   const [stop, setStop] = useState<StopRecord | null>(null);
+  const [manager, setManager] = useState<StoreManagerRecord | null>(null);
   const [totalStopsCount, setTotalStopsCount] = useState<number>(6);
+  const [distanceKm, setDistanceKm] = useState<string>('...');
+
+  // Reactively use the global GPS location
+  const liveCoords = useLocationStore((state) => state.coords);
 
   // Load stop dynamically from SQLite based on query parameter or active/pending status
   const loadStopData = useCallback(() => {
@@ -68,6 +106,16 @@ export default function CurrentStopScreen() {
 
       setStop(foundStop);
 
+      if (foundStop?.manager_id) {
+        const mgr = db.getFirstSync<StoreManagerRecord>(
+          'SELECT * FROM store_managers WHERE id = ?;',
+          [foundStop.manager_id]
+        );
+        setManager(mgr);
+      } else {
+        setManager(null);
+      }
+
       const countRow = db.getFirstSync<{ count: number }>(
         'SELECT COUNT(*) as count FROM stops;'
       );
@@ -82,6 +130,21 @@ export default function CurrentStopScreen() {
   useEffect(() => {
     loadStopData();
   }, [loadStopData]);
+
+  // Calculate distance reactively from the shared location store
+  useEffect(() => {
+    if (liveCoords && stop?.latitude && stop?.longitude) {
+      const R = 6371;
+      const dLat = (stop.latitude - liveCoords.latitude) * Math.PI / 180;
+      const dLon = (stop.longitude - liveCoords.longitude) * Math.PI / 180;
+      const lat1 = liveCoords.latitude * Math.PI / 180;
+      const lat2 = stop.latitude * Math.PI / 180;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      setDistanceKm((R * c).toFixed(1));
+    }
+  }, [liveCoords, stop]);
 
   // Fallback defaults if SQLite row is loading
   const stopNumberStr = stop ? String(stop.stop_number).padStart(2, '0') : '02';
@@ -117,7 +180,8 @@ export default function CurrentStopScreen() {
 
   // Launch phone dialer for store manager
   const handleCallManager = () => {
-    Linking.openURL('tel:+94771234567').catch((err) => {
+    const phoneNumber = manager?.phone ?? '+94771234567';
+    Linking.openURL(`tel:${phoneNumber}`).catch((err) => {
       console.warn('Cannot open phone dialer:', err);
     });
   };
@@ -130,6 +194,9 @@ export default function CurrentStopScreen() {
         db.runSync("UPDATE stops SET status = 'IN_PROGRESS' WHERE id = ?;", [
           stop.id,
         ]);
+
+        // Enqueue the offline sync action for Supabase
+        enqueueSyncItem(stop.id, 'STATUS_UPDATE', { status: 'IN_PROGRESS' });
       } catch (err) {
         console.error('[CurrentStop] Failed to update stop to IN_PROGRESS:', err);
       }
@@ -195,43 +262,59 @@ export default function CurrentStopScreen() {
       </LinearGradient>
 
       {/* 3. Map Snapshot & Direct Navigation */}
-      <Card style={styles.mapCard}>
+      <Card style={[styles.mapCard, { padding: 0 }]}>
         <View style={styles.mapContainer}>
-          <Svg style={StyleSheet.absoluteFill}>
-            <Defs>
-              <Pattern
-                id="grid"
-                width="20"
-                height="20"
-                patternUnits="userSpaceOnUse">
-                <Path
-                  d="M20 0H0V20"
-                  fill="none"
-                  stroke="rgba(255,255,255,0.35)"
-                  strokeWidth={1}
+          {(stop?.latitude && stop?.longitude) ? (
+            <MapView
+              style={StyleSheet.absoluteFill}
+              showsUserLocation={false}
+              showsMyLocationButton={false}
+              customMapStyle={mapStyleDark}
+              region={{
+                latitude: stop.latitude,
+                longitude: stop.longitude,
+                latitudeDelta: 0.04,
+                longitudeDelta: 0.04,
+              }}
+            >
+              {liveCoords && (
+                <Marker
+                  coordinate={{
+                    latitude: liveCoords.latitude,
+                    longitude: liveCoords.longitude,
+                  }}
+                  title="You"
+                  description="Your current location"
+                >
+                  <View style={styles.driverMarker}>
+                    <View style={styles.driverMarkerInner}>
+                      <Icon name="navigation" size={14} color="#FFFFFF" />
+                    </View>
+                  </View>
+                </Marker>
+              )}
+              <Marker
+                coordinate={{ latitude: stop.latitude, longitude: stop.longitude }}
+                title={storeName}
+                pinColor={Colors.primaryYellow}
+              />
+              {liveCoords && (
+                <Polyline
+                  coordinates={[
+                    { latitude: liveCoords.latitude, longitude: liveCoords.longitude },
+                    { latitude: stop.latitude, longitude: stop.longitude }
+                  ]}
+                  strokeColor={Colors.primaryYellow}
+                  strokeWidth={3}
+                  lineDashPattern={[6, 4]}
                 />
-              </Pattern>
-            </Defs>
-            <Rect width="100%" height="100%" fill="url(#grid)" />
-          </Svg>
-
-          {/* Visual stylized roads */}
-          <View style={[styles.mapRoad, styles.mapRoadMain]} />
-          <View style={[styles.mapRoad, styles.mapRoadCross]} />
-          <View style={[styles.mapRoad, styles.mapRoadDiagonal]} />
-
-          {/* Destination Map Pin */}
-          <View style={styles.destinationPin}>
-            <View style={styles.destinationPinIcon}>
-              <Icon name="pin" size={20} color={Colors.textPrimary} />
+              )}
+            </MapView>
+          ) : (
+            <View style={{ flex: 1, backgroundColor: '#E8ECE4', alignItems: 'center', justifyContent: 'center' }}>
+              <Text>Location Unavailable</Text>
             </View>
-          </View>
-
-          {/* Truck Position Pill */}
-          <View style={styles.youPositionBadge}>
-            <View style={styles.youPositionDot} />
-            <Text style={styles.youPositionText}>You (TRK-024)</Text>
-          </View>
+          )}
         </View>
 
         {/* Location Copy & Proximity */}
@@ -246,7 +329,7 @@ export default function CurrentStopScreen() {
           </View>
           <View style={styles.proximityBadge}>
             <Icon name="navigation" size={13} color="#8A5900" />
-            <Text style={styles.proximityText}>1.2 km away</Text>
+            <Text style={styles.proximityText}>{distanceKm} km away</Text>
           </View>
         </View>
 
@@ -264,40 +347,17 @@ export default function CurrentStopScreen() {
         </Pressable>
       </Card>
 
-      {/* 4. Physical Access Conditions (Critical Logistics Block) */}
-      <SectionHeading
-        title="Access conditions"
-        meta="Read before arrival"
-      />
-      <View style={styles.accessGrid}>
-        <AccessCard
-          icon="alert"
-          title="Rear Dock"
-          detail="Enter from Chapel Lane"
-          important
-        />
-        <AccessCard
-          icon="navigation"
-          title="Van Access Only"
-          detail="Height restriction"
-        />
-        <AccessCard
-          icon="clock"
-          title="Loading Bay: 7:45–8:30 AM"
-          detail="Bay 3 reserved for your vehicle"
-          wide
-        />
-      </View>
-
       {/* Store Manager Contact Card */}
       <View style={styles.contactCard}>
         <View style={styles.managerAvatar}>
-          <Text style={styles.managerInitials}>NR</Text>
+          <Text style={styles.managerInitials}>
+            {manager?.name ? manager.name.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase() : 'NR'}
+          </Text>
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.managerRoleLabel}>STORE MANAGER</Text>
-          <Text style={styles.managerName}>Nimal Rathnayake</Text>
-          <Text style={styles.managerPhone}>+94 77 123 4567</Text>
+          <Text style={styles.managerName}>{manager?.name ?? 'Nimal Rathnayake'}</Text>
+          <Text style={styles.managerPhone}>{manager?.phone ?? '+94 77 123 4567'}</Text>
         </View>
         <Pressable
           onPress={handleCallManager}
@@ -835,5 +895,20 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: Colors.textSecondary,
     marginTop: 1,
+  },
+  driverMarker: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  driverMarkerInner: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.primaryYellow,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#1f2835',
+    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.4)',
   },
 });

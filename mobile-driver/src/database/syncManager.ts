@@ -4,6 +4,7 @@ import {
   type SyncPayload,
   type SyncQueueRecord,
 } from '@/database/schema';
+import { supabase } from '@/lib/supabaseClient';
 import { useQueueStore } from '@/store/queueStore';
 
 /**
@@ -43,22 +44,43 @@ export async function flushSyncQueue(): Promise<void> {
         break;
       }
 
-      // Simulate API sync push with network delay
-      await new Promise<void>((resolve) => setTimeout(resolve, 500));
-
-      // Upon successful sync push, mark record as SYNCED
-      db.runSync(
-        "UPDATE sync_queue SET status = 'SYNCED' WHERE id = ?;",
-        [record.id]
-      );
-
-      // Also if it is a POD completion or status update, update corresponding stop in local DB
-      if (record.action_type === 'POD_COMPLETE') {
+      // Hit Supabase based on the action type
+      if (record.action_type === 'STATUS_UPDATE') {
+        const payload = JSON.parse(record.payload);
+        const { error } = await supabase
+          .from('trip_stops')
+          .update({ status: payload.status })
+          .eq('id', record.stop_id);
+          
+        if (error) {
+          console.error('[SyncManager] Supabase update failed:', error);
+          // Stop processing queue if Supabase fails (e.g. network issue despite isOnline)
+          break;
+        }
+      } else if (record.action_type === 'POD_COMPLETE') {
+        // Also update trip_stops to completed
+        const { error } = await supabase
+          .from('trip_stops')
+          .update({ status: 'COMPLETED' })
+          .eq('id', record.stop_id);
+          
+        if (error) {
+          console.error('[SyncManager] Supabase POD complete failed:', error);
+          break;
+        }
+        
+        // Update local status as well
         db.runSync(
           "UPDATE stops SET status = 'COMPLETED' WHERE id = ?;",
           [record.stop_id]
         );
       }
+
+      // Upon successful sync push, mark record as SYNCED locally
+      db.runSync(
+        "UPDATE sync_queue SET status = 'SYNCED' WHERE id = ?;",
+        [record.id]
+      );
 
       // Recalculate remaining pending rows and update queueStore
       const remainingRow = db.getFirstSync<{ count: number }>(
@@ -141,4 +163,87 @@ export function getPendingCount(): number {
     "SELECT COUNT(*) as count FROM sync_queue WHERE status = 'PENDING';"
   );
   return countRow ? countRow.count : 0;
+}
+
+/**
+ * Downloads store managers and trip stops from Supabase and populates the local SQLite DB.
+ * This represents the "Downward Sync" at the start of a shift.
+ */
+export async function downloadTripData(): Promise<void> {
+  if (!useQueueStore.getState().isOnline) {
+    console.warn('[SyncManager] Cannot download trip data while offline.');
+    return;
+  }
+
+  try {
+    // 1. Fetch store managers
+    const { data: managers, error: mgrError } = await supabase
+      .from('store_managers')
+      .select('*');
+      
+    if (mgrError) throw mgrError;
+
+    // 2. Fetch trip stops
+    const { data: stops, error: stopsError } = await supabase
+      .from('trip_stops')
+      .select('*');
+      
+    if (stopsError) throw stopsError;
+
+    // 3. Clear local tables (for simplicity during shift start)
+    db.execSync('DELETE FROM stops;');
+    db.execSync('DELETE FROM store_managers;');
+
+    // 4. Insert managers locally
+    if (managers && managers.length > 0) {
+      const insertManager = db.prepareSync(
+        'INSERT INTO store_managers (id, name, phone) VALUES (?, ?, ?);'
+      );
+      try {
+        for (const mgr of managers) {
+          insertManager.executeSync([mgr.id, mgr.name, mgr.phone]);
+        }
+      } finally {
+        insertManager.finalizeSync();
+      }
+    }
+
+    // 5. Insert stops locally
+    if (stops && stops.length > 0) {
+      const insertStop = db.prepareSync(`
+        INSERT INTO stops (
+          id, stop_number, store_name, address, window,
+          is_chilled, items_count, weight_kg, volume_m3,
+          access_notes, latitude, longitude, status, manager_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      `);
+
+      try {
+        for (const stop of stops) {
+          insertStop.executeSync([
+            stop.id,
+            stop.stop_number,
+            stop.store_name,
+            stop.address,
+            stop.window,
+            stop.is_chilled ? 1 : 0, // Convert boolean from Supabase to SQLite INTEGER
+            stop.items_count,
+            stop.weight_kg,
+            stop.volume_m3,
+            stop.access_notes ?? '',
+            stop.latitude ?? null,
+            stop.longitude ?? null,
+            stop.status || 'PENDING',
+            stop.manager_id ?? null,
+          ]);
+        }
+      } finally {
+        insertStop.finalizeSync();
+      }
+    }
+
+    console.log('[SyncManager] Successfully downloaded trip data from Supabase!');
+  } catch (error) {
+    console.error('[SyncManager] Error downloading trip data:', error);
+  }
 }

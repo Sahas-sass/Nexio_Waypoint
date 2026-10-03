@@ -19,10 +19,19 @@ export interface StopRecord {
   weight_kg: number;
   volume_m3: number;
   access_notes: string;
+  latitude?: number;
+  longitude?: number;
   status: StopStatus;
+  manager_id?: string;
 }
 
-export type SyncActionType = 'POD_COMPLETE' | 'STATUS_UPDATE';
+export interface StoreManagerRecord {
+  id: string;
+  name: string;
+  phone: string;
+}
+
+export type SyncActionType = 'POD_COMPLETE' | 'STATUS_UPDATE' | 'LOCATION_UPDATE';
 export type SyncStatus = 'PENDING' | 'SYNCED';
 
 export interface SyncPayload {
@@ -42,6 +51,11 @@ export interface SyncQueueRecord {
   created_at: string;
 }
 
+export const SEED_MANAGERS: readonly StoreManagerRecord[] = [
+  { id: 'm1', name: 'Nimal Rathnayake', phone: '+94 77 123 4567' },
+  { id: 'm2', name: 'Kamal Perera', phone: '+94 71 987 6543' },
+];
+
 export const SEED_STOPS: readonly StopRecord[] = [
   {
     id: '01',
@@ -54,7 +68,10 @@ export const SEED_STOPS: readonly StopRecord[] = [
     weight_kg: 240,
     volume_m3: 1.6,
     access_notes: 'Standard Front Access',
+    latitude: 6.9061,
+    longitude: 79.8710,
     status: 'PENDING',
+    manager_id: 'm1',
   },
   {
     id: '02',
@@ -67,7 +84,10 @@ export const SEED_STOPS: readonly StopRecord[] = [
     weight_kg: 420,
     volume_m3: 2.4,
     access_notes: 'Rear Dock, Enter from Chapel Lane, Van Access Only, Bay 3 reserved',
+    latitude: 6.8649,
+    longitude: 79.8997,
     status: 'PENDING',
+    manager_id: 'm2',
   },
   {
     id: '03',
@@ -80,7 +100,10 @@ export const SEED_STOPS: readonly StopRecord[] = [
     weight_kg: 180,
     volume_m3: 1.8,
     access_notes: 'Curbside Unloading',
+    latitude: 6.9000,
+    longitude: 79.8541,
     status: 'PENDING',
+    manager_id: 'm1',
   },
   {
     id: '04',
@@ -93,7 +116,10 @@ export const SEED_STOPS: readonly StopRecord[] = [
     weight_kg: 310,
     volume_m3: 2.1,
     access_notes: 'Underground Service Bay',
+    latitude: 6.8406,
+    longitude: 79.8732,
     status: 'PENDING',
+    manager_id: 'm2',
   },
 ] as const;
 
@@ -103,6 +129,15 @@ export const SEED_STOPS: readonly StopRecord[] = [
 export function initDatabase(): void {
   // Enable Write-Ahead Logging for high-throughput mobile storage
   db.execSync('PRAGMA journal_mode = WAL;');
+
+  // Table: store_managers
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS store_managers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      phone TEXT NOT NULL
+    );
+  `);
 
   // Table: stops
   db.execSync(`
@@ -117,7 +152,11 @@ export function initDatabase(): void {
       weight_kg REAL NOT NULL,
       volume_m3 REAL NOT NULL,
       access_notes TEXT,
-      status TEXT DEFAULT 'PENDING'
+      latitude REAL,
+      longitude REAL,
+      status TEXT DEFAULT 'PENDING',
+      manager_id TEXT,
+      FOREIGN KEY(manager_id) REFERENCES store_managers(id)
     );
   `);
 
@@ -132,6 +171,23 @@ export function initDatabase(): void {
       created_at TEXT NOT NULL
     );
   `);
+
+  // Seed store managers if table is empty
+  const managerCountRow = db.getFirstSync<{ count: number }>(
+    'SELECT COUNT(*) as count FROM store_managers;'
+  );
+  if (managerCountRow && managerCountRow.count === 0) {
+    const insertManager = db.prepareSync(
+      'INSERT INTO store_managers (id, name, phone) VALUES (?, ?, ?);'
+    );
+    try {
+      for (const manager of SEED_MANAGERS) {
+        insertManager.executeSync([manager.id, manager.name, manager.phone]);
+      }
+    } finally {
+      insertManager.finalizeSync();
+    }
+  }
 
   // Seed stops if table is empty
   const countRow = db.getFirstSync<{ count: number }>(
@@ -152,8 +208,11 @@ export function initDatabase(): void {
         weight_kg,
         volume_m3,
         access_notes,
-        status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        latitude,
+        longitude,
+        status,
+        manager_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     `);
 
     try {
@@ -169,7 +228,10 @@ export function initDatabase(): void {
           stop.weight_kg,
           stop.volume_m3,
           stop.access_notes,
+          stop.latitude ?? null,
+          stop.longitude ?? null,
           stop.status,
+          stop.manager_id ?? null,
         ]);
       }
     } finally {
