@@ -3,14 +3,17 @@ import { io, Socket } from 'socket.io-client';
 import { enqueueSyncItem } from '@/database/syncManager';
 import { useLocationStore } from '@/store/locationStore';
 
-// Ideally, this should point to the backend URL via an env variable.
-// For local testing on an emulator, use standard localhost or 10.0.2.2.
-const SOCKET_URL = 'http://localhost:5000';
+// Environment-driven WebSocket endpoint for production or local development
+const SOCKET_URL =
+  process.env.EXPO_PUBLIC_SOCKET_URL ||
+  process.env.EXPO_PUBLIC_BACKEND_URL ||
+  'http://localhost:5000';
 
 class LocationService {
   private socket: Socket | null = null;
   private locationSubscription: Location.LocationSubscription | null = null;
   private isTracking = false;
+  private lastOfflineTelemetryTime = 0;
 
   public initialize() {
     this.socket = io(SOCKET_URL, {
@@ -85,11 +88,13 @@ class LocationService {
     if (this.socket && this.socket.connected) {
       // Online: Emit directly to WebSocket
       this.socket.emit('driver_location_update', payload);
-      // console.log('[LocationService] Emitted location online:', payload);
     } else {
-      // Offline: Gracefully degrade by caching locally in SQLite queue
-      // console.log('[LocationService] Offline! Caching location to local db...', payload);
-      enqueueSyncItem('system_telemetry', 'LOCATION_UPDATE', payload);
+      // Offline: Throttle telemetry queueing to at most once per 30s to prevent DB queue explosion
+      const now = Date.now();
+      if (now - this.lastOfflineTelemetryTime >= 30000) {
+        this.lastOfflineTelemetryTime = now;
+        enqueueSyncItem('system_telemetry', 'LOCATION_UPDATE', payload);
+      }
     }
   }
 }
