@@ -74,32 +74,46 @@ cp .env.example mobile-driver/.env         # EXPO_PUBLIC_SUPABASE_URL / ANON_KEY
 npm install
 npm run migrate                                  # applies migrations/*.sql
 DEMO_PASSWORD='choose-one' node scripts/seed-auth.js
-node scripts/run-seed.js seeds/006_demo_day.sql
+npm run seed:file -- seeds/006_demo_day.sql
 ```
+`seed-auth.js` creates one account per role plus a driver for every vehicle;
+`006_demo_day.sql` builds today's trips and tomorrow's order queue (chilled demand
+exceeds refrigerated capacity, so the dispatcher has to defer orders).
 
 ### 3. Run
 ```bash
-docker compose up        # db setup + api-backend :5000 + web-portals :3000
+docker compose up        # db-setup (migrate + seed) -> api-backend :5000 -> web-portals :3000
 # or individually:
 cd api-backend && npm install && node server.js
 cd web-portals && npm install && npm run dev
 cd mobile-driver && npm install && npx expo start   # scan with Expo Go, or press w for web
+# driver app as a static web build (e.g. for Vercel):
+cd mobile-driver && npx expo export -p web           # output in mobile-driver/dist
 ```
 
 ## Tests
 
-```bash
-cd web-portals && npm test          # Vitest unit tests
-cd mobile-driver && npm test        # Jest (jest-expo) unit tests
-cd api-backend && npm test          # telemetry service tests
-npm run test:db                     # RLS + RPC integration tests (rolled back)
-```
+| Command | What it covers |
+|---|---|
+| `cd web-portals && npm test` | Vitest: store manager, dispatcher (allocation engine), loader, auth/route guards, profile validation |
+| `cd mobile-driver && npm test` | Jest (jest-expo): auth, trip mapping, offline sync queue, POD payloads, location throttling |
+| `cd api-backend && npm test` | node:test: socket auth, payload validation, CORS, health |
+| `npm run test:scripts` | DB connection config and seed runner |
+| `npm run test:db` | Row level security + workflow RPCs against the database, each test inside a rolled-back transaction |
 
 ## Departures from the Designathon submission
 
 - **Order entry** captures weight, volume, item count, temperature and priority rather than a per-brand product catalogue. The shared datasets have no product list, and the planning engine only needs these quantities.
 - **Driver login** uses Supabase email and password instead of an SMS one-time code, so every request carries a verifiable session.
 - **The driver app is an Expo app** and also runs in the browser (`npx expo start --web`) for phone-sized judging.
+
+## Security
+
+- Supabase Auth for every role; the web middleware and every API route check the session and role.
+- Row level security on every table. Store and driver writes go through RPCs that check ownership and business rules (order cutoff, capacity, temperature, van-only access).
+- Users cannot change their own role, store, verification or permissions (database trigger).
+- Proof-of-delivery files are in a private bucket readable only by staff, the driver and the receiving store.
+- The telemetry socket requires a Supabase token; drivers can only report positions for their own trip.
 
 ## Known limitations
 
