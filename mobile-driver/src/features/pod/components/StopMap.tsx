@@ -1,4 +1,5 @@
-import { StyleSheet, View } from 'react-native';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
+import { Platform, StyleSheet, View } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 
 import { Icon } from '@/components/waypoint/icon';
@@ -6,6 +7,7 @@ import type { TripStop } from '@/features/trip/types';
 import type { LatLng } from '@/utils/haversine';
 import { Colors } from '@/utils/theme';
 
+import { canShowNativeMap } from '../utils/mapAvailability';
 import { MapPlaceholder } from './MapPlaceholder';
 import { mapStyleDark } from './mapStyle';
 
@@ -13,6 +15,14 @@ import { mapStyleDark } from './mapStyle';
 export function StopMap({ stop, driver }: { stop: TripStop; driver: LatLng | null }) {
   if (stop.latitude == null || stop.longitude == null) {
     return <MapPlaceholder message="Store location not set" />;
+  }
+  const mapAvailable = canShowNativeMap({
+    platform: Platform.OS,
+    isExpoGo: Constants.executionEnvironment === ExecutionEnvironment.StoreClient,
+    androidMapsApiKey: Constants.expoConfig?.android?.config?.googleMaps?.apiKey,
+  });
+  if (!mapAvailable) {
+    return <MapPlaceholder message="Map unavailable – use Navigate" />;
   }
   const store = { latitude: stop.latitude, longitude: stop.longitude };
   return (
