@@ -168,6 +168,8 @@ export function getPendingCount(): number {
 /**
  * Downloads store managers and trip stops from Supabase and populates the local SQLite DB.
  * This represents the "Downward Sync" at the start of a shift.
+ * 
+ * Supabase schema: trip_stops → stores (name, address, manager_id) → store_managers (name, phone)
  */
 export async function downloadTripData(): Promise<void> {
   if (!useQueueStore.getState().isOnline) {
@@ -176,39 +178,41 @@ export async function downloadTripData(): Promise<void> {
   }
 
   try {
-    // 1. Fetch store managers
-    const { data: managers, error: mgrError } = await supabase
-      .from('store_managers')
-      .select('*');
-      
-    if (mgrError) throw mgrError;
-
-    // 2. Fetch trip stops
+    // Fetch trip stops with nested store and manager data in a single query
     const { data: stops, error: stopsError } = await supabase
       .from('trip_stops')
-      .select('*');
+      .select('*, stores(id, name, address, manager_id, store_managers(id, name, phone))');
       
     if (stopsError) throw stopsError;
 
-    // 3. Clear local tables (for simplicity during shift start)
+    console.log(`[SyncManager] Downloaded ${stops?.length ?? 0} trip stops from Supabase.`);
+
+    // 1. Clear local tables
     db.execSync('DELETE FROM stops;');
     db.execSync('DELETE FROM store_managers;');
 
-    // 4. Insert managers locally
-    if (managers && managers.length > 0) {
+    // 2. Collect unique managers from the nested join and insert them locally
+    const insertedManagerIds = new Set<string>();
+    if (stops && stops.length > 0) {
       const insertManager = db.prepareSync(
-        'INSERT INTO store_managers (id, name, phone) VALUES (?, ?, ?);'
+        'INSERT OR IGNORE INTO store_managers (id, name, phone) VALUES (?, ?, ?);'
       );
       try {
-        for (const mgr of managers) {
-          insertManager.executeSync([mgr.id, mgr.name, mgr.phone]);
+        for (const stop of stops) {
+          const mgr = stop.stores?.store_managers;
+          if (mgr && mgr.id && !insertedManagerIds.has(mgr.id)) {
+            insertManager.executeSync([mgr.id, mgr.name, mgr.phone]);
+            insertedManagerIds.add(mgr.id);
+            console.log(`[SyncManager] Inserted manager: ${mgr.name} (${mgr.id})`);
+          }
         }
       } finally {
         insertManager.finalizeSync();
       }
     }
+    console.log(`[SyncManager] Inserted ${insertedManagerIds.size} unique managers.`);
 
-    // 5. Insert stops locally
+    // 3. Insert stops locally, pulling store name/address from the nested stores object
     if (stops && stops.length > 0) {
       const insertStop = db.prepareSync(`
         INSERT INTO stops (
@@ -220,27 +224,37 @@ export async function downloadTripData(): Promise<void> {
 
       try {
         for (const stop of stops) {
+          // Pull store details from the nested join
+          const storeName = stop.stores?.name ?? stop.store_name ?? 'Unknown Store';
+          const storeAddress = stop.stores?.address ?? stop.address ?? '';
+          const managerId = stop.stores?.manager_id ?? stop.manager_id ?? null;
+
+          console.log(`[SyncManager] Stop #${stop.stop_number} "${storeName}" → manager_id: ${managerId}`);
+
           insertStop.executeSync([
             stop.id,
             stop.stop_number,
-            stop.store_name,
-            stop.address,
-            stop.window,
-            stop.is_chilled ? 1 : 0, // Convert boolean from Supabase to SQLite INTEGER
-            stop.items_count,
-            stop.weight_kg,
-            stop.volume_m3,
+            storeName,
+            storeAddress,
+            stop.window ?? '',
+            stop.is_chilled ? 1 : 0,
+            stop.items_count ?? 0,
+            stop.weight_kg ?? 0,
+            stop.volume_m3 ?? 0,
             stop.access_notes ?? '',
             stop.latitude ?? null,
             stop.longitude ?? null,
             stop.status || 'PENDING',
-            stop.manager_id ?? null,
+            managerId,
           ]);
         }
       } finally {
         insertStop.finalizeSync();
       }
     }
+
+    // Bump the reactive data version so all subscribed screens re-render
+    useQueueStore.getState().bumpDataVersion();
 
     console.log('[SyncManager] Successfully downloaded trip data from Supabase!');
   } catch (error) {

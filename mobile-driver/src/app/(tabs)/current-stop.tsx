@@ -1,5 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   Linking,
@@ -36,6 +36,7 @@ import {
 import { db, initDatabase, type StopRecord, type StoreManagerRecord } from '@/database/schema';
 import { enqueueSyncItem } from '@/database/syncManager';
 import { useLocationStore } from '@/store/locationStore';
+import { useQueueStore } from '@/store/queueStore';
 import { Colors, font, Radius, Shadow, W } from '@/utils/theme';
 
 const mapStyleDark = [
@@ -68,6 +69,9 @@ export default function CurrentStopScreen() {
 
   // Reactively use the global GPS location
   const liveCoords = useLocationStore((state) => state.coords);
+
+  // Subscribe to dataVersion so we re-read SQLite when Supabase sync completes
+  const dataVersion = useQueueStore((state) => state.dataVersion);
 
   // Load stop dynamically from SQLite based on query parameter or active/pending status
   const loadStopData = useCallback(() => {
@@ -107,12 +111,15 @@ export default function CurrentStopScreen() {
       setStop(foundStop);
 
       if (foundStop?.manager_id) {
+        console.log(`[CurrentStop] Looking up manager_id: "${foundStop.manager_id}"`);
         const mgr = db.getFirstSync<StoreManagerRecord>(
           'SELECT * FROM store_managers WHERE id = ?;',
           [foundStop.manager_id]
         );
+        console.log(`[CurrentStop] Found manager: ${mgr ? mgr.name : 'NULL'}`);
         setManager(mgr);
       } else {
+        console.log('[CurrentStop] No manager_id on this stop, setting manager to null');
         setManager(null);
       }
 
@@ -125,11 +132,13 @@ export default function CurrentStopScreen() {
     } catch (err) {
       console.error('[CurrentStop] Failed to query stop from SQLite:', err);
     }
-  }, [params.stop, params.stopId]);
+  }, [params.stop, params.stopId, dataVersion]);
 
-  useEffect(() => {
-    loadStopData();
-  }, [loadStopData]);
+  useFocusEffect(
+    useCallback(() => {
+      loadStopData();
+    }, [loadStopData])
+  );
 
   // Calculate distance reactively from the shared location store
   useEffect(() => {

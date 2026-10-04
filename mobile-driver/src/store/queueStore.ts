@@ -9,6 +9,8 @@ export interface QueueState {
   currentVehicle: string;
   /** Logged-in driver name */
   driverName: string;
+  /** Monotonically increasing version — bumped each time Supabase data is downloaded */
+  dataVersion: number;
 
   /** Update connectivity status */
   setIsOnline: (isOnline: boolean) => void;
@@ -18,6 +20,8 @@ export interface QueueState {
   setCurrentVehicle: (currentVehicle: string) => void;
   /** Update current driver name */
   setDriverName: (driverName: string) => void;
+  /** Bump dataVersion to trigger screen re-renders after Supabase sync */
+  bumpDataVersion: () => void;
 
   /** Convenience action: Increment pending queue count */
   incrementPendingCount: (amount?: number) => void;
@@ -33,6 +37,7 @@ export const useQueueStore = create<QueueState>((set) => ({
   pendingCount: 0,
   currentVehicle: 'TRK-024',
   driverName: 'Kasun Perera',
+  dataVersion: 0,
 
   // Actions
   setIsOnline: (isOnline: boolean) => set({ isOnline }),
@@ -46,6 +51,8 @@ export const useQueueStore = create<QueueState>((set) => ({
   setCurrentVehicle: (currentVehicle: string) => set({ currentVehicle }),
 
   setDriverName: (driverName: string) => set({ driverName }),
+
+  bumpDataVersion: () => set((state) => ({ dataVersion: state.dataVersion + 1 })),
 
   incrementPendingCount: (amount: number = 1) =>
     set((state) => ({ pendingCount: Math.max(0, state.pendingCount + amount) })),

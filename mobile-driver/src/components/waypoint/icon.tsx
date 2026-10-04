@@ -117,6 +117,15 @@ const paths = {
       <Circle cx="12" cy="12" r="2.5" />
     </>
   ),
+  mail: (
+    <>
+      <Rect x="2" y="4" width="20" height="16" rx="2" />
+      <Path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+    </>
+  ),
+  x: (
+    <Path d="M18 6 6 18M6 6l12 12" />
+  ),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof paths;
