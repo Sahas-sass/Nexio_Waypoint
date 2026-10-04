@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -29,6 +29,12 @@ const PICKER_OPTIONS: ImagePicker.ImagePickerOptions = {
 export function CameraCapture({ onCapture, photo }: CameraCaptureProps) {
   const [capturedAt, setCapturedAt] = useState<string | null>(null);
   const isCaptured = Boolean(photo);
+
+  useEffect(() => {
+    if (!photo) {
+      setCapturedAt(null);
+    }
+  }, [photo]);
 
   const accept = (result: ImagePicker.ImagePickerResult) => {
     if (result.canceled) return;

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   PanResponder,
@@ -26,6 +26,13 @@ export function SignaturePad({ onConfirm, isConfirmed }: SignaturePadProps) {
   const [paths, setPaths] = useState<string[]>([]);
   const [currentPath, setCurrentPath] = useState<string>('');
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isConfirmed) {
+      setPaths([]);
+      setCurrentPath('');
+    }
+  }, [isConfirmed]);
 
   const isLocked = isConfirmed;
 

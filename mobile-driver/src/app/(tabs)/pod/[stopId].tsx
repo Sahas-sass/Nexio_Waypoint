@@ -1,5 +1,5 @@
-import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
     Alert,
     Pressable,
@@ -52,6 +52,22 @@ export default function PodScreen() {
     const [note, setNote] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    // Reset all form states whenever a new stop is opened or the screen comes into focus
+    useFocusEffect(
+        useCallback(() => {
+            setIsSubmitting(false);
+        }, [])
+    );
+
+    useEffect(() => {
+        setIsSubmitting(false);
+        setSignaturePng(null);
+        setPhoto(null);
+        setFailed(false);
+        setItemsDelivered(null);
+        setNote('');
+    }, [stop?.id, stopId]);
+
     if (!stop) {
         return (
             <Screen>
@@ -92,10 +108,21 @@ export default function PodScreen() {
                 isOnline,
             });
             submitProofOfDelivery(payload);
+
+            // Clean up state immediately before navigating
+            setIsSubmitting(false);
+            setSignaturePng(null);
+            setPhoto(null);
+            setFailed(false);
+            setItemsDelivered(null);
+            setNote('');
+
             router.replace({ pathname: '/pod/complete', params: { stopId: stop.id } });
         } catch (err) {
             setIsSubmitting(false);
             Alert.alert('Cannot complete delivery', err instanceof Error ? err.message : 'Please try again.');
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -172,12 +199,20 @@ export default function PodScreen() {
 
             {!failed && (
                 <View style={styles.stepSection}>
-                    <SignaturePad onConfirm={setSignaturePng} isConfirmed={Boolean(signaturePng)} />
+                    <SignaturePad
+                        key={`sig-${stop.id}`}
+                        onConfirm={setSignaturePng}
+                        isConfirmed={Boolean(signaturePng)}
+                    />
                 </View>
             )}
 
             <View style={styles.stepSection}>
-                <CameraCapture onCapture={setPhoto} photo={photo} />
+                <CameraCapture
+                    key={`cam-${stop.id}`}
+                    onCapture={setPhoto}
+                    photo={photo}
+                />
             </View>
 
             <View style={styles.notesCard}>

@@ -1,30 +1,36 @@
 {
   "expo": {
     "name": "Waypoint Driver",
-    "slug": "mobile-driver",
+    "slug": "waypoint-driver",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mobiledriver",
+    "scheme": "waypointdriver",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "bundleIdentifier": "com.waypoint.driver",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Waypoint Driver requires camera access to capture proof-of-delivery photos and document cargo condition.",
+        "NSPhotoLibraryUsageDescription": "Waypoint Driver requires access to your photo library to attach delivery documentation.",
+        "NSLocationWhenInUseUsageDescription": "Waypoint Driver uses your location to calculate distance to delivery stops and assist turn-by-turn navigation."
+      }
     },
     "android": {
+      "package": "com.waypoint.driver",
+      "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#FFC83D",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false,
-      "package": "com.nexio.waypointdriver",
       "permissions": [
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
-      ]
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ],
+      "predictiveBackGestureEnabled": false
     },
     "web": {
       "output": "single",
@@ -35,23 +41,23 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#FFC83D",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 80
         }
       ],
       "expo-sqlite",
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Waypoint uses your location to show distance to the next stop and update the dispatcher."
+          "locationWhenInUsePermission": "Waypoint Driver uses your location to calculate distance to delivery stops and assist turn-by-turn navigation."
         }
       ],
       [
         "expo-image-picker",
         {
-          "cameraPermission": "Waypoint uses the camera to photograph deliveries as proof of delivery.",
-          "photosPermission": "Waypoint lets you attach a delivery photo from your library."
+          "cameraPermission": "Waypoint Driver requires camera access to capture proof-of-delivery photos and document cargo condition.",
+          "photosPermission": "Waypoint Driver requires access to your photo library to attach delivery documentation."
         }
       ]
     ],

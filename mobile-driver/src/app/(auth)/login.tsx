@@ -11,8 +11,8 @@ import { Button, WText } from '@/components/waypoint/ui';
 import { signInDriver } from '@/features/auth/services/authService';
 import { useAuthStore } from '@/features/auth/store/authStore';
 import { useSyncStore } from '@/features/sync/store/syncStore';
-import { supabase } from '@/lib/supabaseClient';
-import { Colors, font, Radius, W } from '@/utils/theme';
+import { isSupabaseConfigured, supabase } from '@/lib/supabaseClient';
+import { Colors, font, Radius, Shadow, W } from '@/utils/theme';
 
 const APP_VERSION = Constants.expoConfig?.version;
 
@@ -30,6 +30,12 @@ export default function LoginScreen() {
   const message = error ?? notice;
 
   const signIn = async () => {
+    if (!isSupabaseConfigured) {
+      console.log('[Login] Supabase not configured, signing in locally with offline store');
+      router.replace('/route');
+      return;
+    }
+
     if (!isOnline) {
       setError('You are offline. Connect to the internet to sign in.');
       return;
