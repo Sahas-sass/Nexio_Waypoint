@@ -1,156 +1,43 @@
-import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { useCallback, useState } from 'react';
+import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '@/components/waypoint/chrome';
 import { Icon } from '@/components/waypoint/icon';
-import { Card, Label, TitleRow, WText } from '@/components/waypoint/ui';
-import { truckPhoto } from '@/data/mock';
-import { db, initDatabase, type StopRecord } from '@/database/schema';
-import { useQueueStore } from '@/store/queueStore';
+import { Card, Label } from '@/components/waypoint/ui';
+import { useLocationStore } from '@/features/location/locationStore';
+import { useSyncStore } from '@/features/sync/store/syncStore';
+import { TripStateView } from '@/features/trip/components/TripStateView';
+import { useTrip } from '@/features/trip/hooks/useTrip';
+import { reloadTrip } from '@/features/trip/services/tripController';
+import type { TripStop } from '@/features/trip/types';
+import { stopKind, stopKindLabel } from '@/features/trip/utils/stopProgress';
+import { formatDateParts, formatKg, formatTimestamp, padStop, parseDateOnly } from '@/utils/formatters';
+import { distanceLabel } from '@/utils/haversine';
 import { Colors, font, Radius, Shadow, W } from '@/utils/theme';
 
-const DAYS = [
-  'Sunday',
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-];
-
-const MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
-
-export function getFormattedCurrentDate(): {
-  fullDate: string;
-  dayNumber: string;
-  shortMonth: string;
-} {
-  const now = new Date();
-  const dayName = DAYS[now.getDay()];
-  const dayNumber = String(now.getDate());
-  const monthName = MONTHS[now.getMonth()];
-  const shortMonth = monthName.substring(0, 3).toUpperCase();
-  return {
-    fullDate: `${dayName}, ${dayNumber} ${monthName}`,
-    dayNumber,
-    shortMonth,
-  };
-}
-
 export default function RouteScreen() {
-  const isOnline = useQueueStore((state) => state.isOnline);
-  const currentVehicle = useQueueStore((state) => state.currentVehicle) || 'TRK-024';
-  const driverName = useQueueStore((state) => state.driverName) || 'Kasun Perera';
-
-  const [stops, setStops] = useState<StopRecord[]>([]);
+  const isOnline = useSyncStore((state) => state.isOnline);
+  const coords = useLocationStore((state) => state.coords);
+  const { status, error, driver, trip, stops, activeIndex, activeStop, progress } = useTrip();
   const [refreshing, setRefreshing] = useState(false);
 
-  // Load stops from local SQLite database
-  const loadStopsFromDb = useCallback((): StopRecord[] => {
-    try {
-      let rows = db.getAllSync<StopRecord>(
-        'SELECT * FROM stops ORDER BY stop_number ASC;'
-      );
-
-      // If database was empty or not seeded, initialize and reload
-      if (!rows || rows.length === 0) {
-        initDatabase();
-        rows = db.getAllSync<StopRecord>(
-          'SELECT * FROM stops ORDER BY stop_number ASC;'
-        );
-      }
-
-      return rows ?? [];
-    } catch (err) {
-      console.error('[RouteScreen] Error querying stops from SQLite:', err);
-      return [];
-    }
-  }, []);
-
-  // Initial load
-  useEffect(() => {
-    setStops(loadStopsFromDb());
-  }, [loadStopsFromDb]);
-
-  // Pull-to-refresh
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const refreshedStops = loadStopsFromDb();
-      setStops(refreshedStops);
+      await reloadTrip();
     } finally {
       setRefreshing(false);
     }
-  }, [loadStopsFromDb]);
+  }, []);
 
-  // Dynamic Date (Hermes-safe cross-platform formatting)
-  const { dayNumber, shortMonth: monthAbbr } = useMemo(
-    () => getFormattedCurrentDate(),
-    []
-  );
+  const { dayNumber, shortMonth } = formatDateParts(parseDateOnly(trip?.tripDate) ?? new Date());
+  const vehicleName = trip?.vehicle?.registrationNumber ?? null;
+  const departedAt = trip?.departureTime ?? formatTimestamp(trip?.dispatchedAt);
 
-  // Load metrics calculation from DB stops
-  const totalItems = useMemo(
-    () => stops.reduce((sum, s) => sum + s.items_count, 0) || 28,
-    [stops]
-  );
-  const totalWeight = useMemo(
-    () => Math.round(stops.reduce((sum, s) => sum + s.weight_kg, 0)) || 420,
-    [stops]
-  );
-
-  // Progress calculation: completed vs total
-  const completedCount = useMemo(
-    () => stops.filter((s) => s.status === 'COMPLETED').length,
-    [stops]
-  );
-  const totalStops = stops.length || 4;
-  const progressPercent =
-    totalStops > 0 ? Math.round((completedCount / totalStops) * 100) : 0;
-
-  // Active stop identification: first in_progress, else first pending
-  const activeStopIndex = useMemo(() => {
-    const inProgressIndex = stops.findIndex((s) => s.status === 'IN_PROGRESS');
-    if (inProgressIndex !== -1) return inProgressIndex;
-    return stops.findIndex((s) => s.status === 'PENDING');
-  }, [stops]);
-
-  const remainingStopsCount = useMemo(
-    () => stops.filter((s) => s.status !== 'COMPLETED').length,
-    [stops]
-  );
-
-  const handleOpenStop = (stop: StopRecord) => {
-    router.navigate({
-      pathname: '/current-stop',
-      params: {
-        stop: String(stop.stop_number).padStart(2, '0'),
-        stopId: stop.id,
-      },
-    });
+  const handleOpenStop = (stop: TripStop) => {
+    router.navigate({ pathname: '/current-stop', params: { stopId: stop.id } });
   };
 
   return (
@@ -168,10 +55,13 @@ export default function RouteScreen() {
         <View style={{ flex: 1 }}>
           <Text style={styles.headerEyebrow}>DAILY ITINERARY</Text>
           <Text style={styles.headerTitle}>Today&apos;s Route</Text>
-          <Text style={styles.headerSubtitle}>{currentVehicle}</Text>
+          {trip ? (
+            <Text style={styles.headerSubtitle}>
+              {[trip.tripNumber, vehicleName].filter(Boolean).join(' • ')}
+            </Text>
+          ) : null}
         </View>
 
-        {/* Network Status Badge */}
         <Pressable
           onPress={() => router.push('/offline')}
           accessibilityRole="button"
@@ -184,298 +74,258 @@ export default function RouteScreen() {
             },
           ]}>
           <View
-            style={[
-              styles.networkDot,
-              { backgroundColor: isOnline ? Colors.successGreen : Colors.warningOrange },
-            ]}
+            style={[styles.networkDot, { backgroundColor: isOnline ? Colors.successGreen : Colors.warningOrange }]}
           />
-          <Text
-            style={[
-              styles.networkBadgeText,
-              { color: isOnline ? W.greenDark : Colors.offlineText },
-            ]}>
+          <Text style={[styles.networkBadgeText, { color: isOnline ? W.greenDark : Colors.offlineText }]}>
             {isOnline ? 'Online' : 'Offline'}
           </Text>
         </Pressable>
 
-        {/* Date Tile */}
         <View style={styles.dateTile}>
           <Text style={styles.dateDayText}>{dayNumber}</Text>
-          <Text style={styles.dateMonthText}>{monthAbbr}</Text>
+          <Text style={styles.dateMonthText}>{shortMonth}</Text>
         </View>
       </View>
 
-      {/* Route Summary Card */}
-      <View style={styles.vehicleCard}>
-        <Image
-          source={{ uri: truckPhoto }}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-          contentPosition={{ top: '57%' }}
-          accessibilityLabel="White freight truck on delivery route"
+      {!trip ? (
+        <TripStateView
+          kind={status === 'error' ? 'error' : status === 'ready' ? 'empty' : 'loading'}
+          message={status === 'error' ? error : undefined}
+          onRetry={handleRefresh}
         />
-        <LinearGradient
-          colors={['rgba(0,0,0,0.1)', 'rgba(16,18,18,0.22)', 'rgba(17,18,18,0.92)']}
-          locations={[0, 0.35, 1]}
-          style={StyleSheet.absoluteFill}
-        />
-        <LinearGradient
-          colors={['rgba(255,200,61,0.3)', 'rgba(255,200,61,0)']}
-          locations={[0, 0.55]}
-          start={{ x: 0, y: 0.2 }}
-          end={{ x: 1, y: 0.8 }}
-          style={StyleSheet.absoluteFill}
-        />
+      ) : (
+        <>
+          {/* Route Summary Card */}
+          <View style={styles.vehicleCard}>
+            <LinearGradient
+              colors={['#3a3b3d', '#26272a', 'rgba(17,18,18,0.98)']}
+              locations={[0, 0.35, 1]}
+              style={StyleSheet.absoluteFill}
+            />
+            <LinearGradient
+              colors={['rgba(255,200,61,0.3)', 'rgba(255,200,61,0)']}
+              locations={[0, 0.55]}
+              start={{ x: 0, y: 0.2 }}
+              end={{ x: 1, y: 0.8 }}
+              style={StyleSheet.absoluteFill}
+            />
 
-        {/* Truck Header Row */}
-        <View style={styles.vehicleTop}>
-          <View style={styles.truckBadge}>
-            <Icon name="route" size={13} color={Colors.textPrimary} />
-            <Text style={styles.truckBadgeText}>
-              {currentVehicle} - Heavy Freight Truck
-            </Text>
-          </View>
-          <Text style={styles.photoCredit}>Today&apos;s Route • {totalStops} Stops</Text>
-        </View>
-
-        {/* Vehicle Metadata & Shift Status */}
-        <View style={styles.vehicleContent}>
-          <View style={styles.vehicleMetaGrid}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.metaLabel}>DRIVER</Text>
-              <Text style={styles.metaValue} numberOfLines={1}>
-                {driverName}
-              </Text>
-            </View>
-            <View style={{ flex: 1.3 }}>
-              <Text style={styles.metaLabel}>LOAD</Text>
-              <Text style={styles.metaValue}>
-                {totalItems} Items • {totalWeight} kg
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.departureBar}>
-            <Icon name="clock" size={16} color={Colors.surfaceWhite} />
-            <Text style={styles.departureText}>Departed 06:30 AM</Text>
-            <View style={styles.scheduleBadge}>
-              <View style={styles.scheduleDot} />
-              <Text style={styles.scheduleText}>On schedule</Text>
-            </View>
-          </View>
-        </View>
-      </View>
-
-      {/* Route Progress Card */}
-      <Card style={styles.progressCard}>
-        <View style={styles.progressHeaderRow}>
-          <View>
-            <Label size={9} spacing={0.11}>
-              ROUTE PROGRESS
-            </Label>
-            <Text style={styles.progressTitle}>
-              {completedCount} of {totalStops} Stops Completed
-            </Text>
-          </View>
-          <Text style={styles.progressPercentage}>{progressPercent}%</Text>
-        </View>
-
-        {/* Progress Bar with #FFC83D fill */}
-        <View style={styles.progressBarTrack}>
-          <View
-            style={[
-              styles.progressBarFill,
-              { width: `${Math.min(100, Math.max(0, progressPercent))}%` },
-            ]}
-          />
-        </View>
-
-        {/* Step Dots along the Route Line */}
-        <View style={styles.stepDotsRow}>
-          {stops.map((stop, index) => {
-            const isDone = stop.status === 'COMPLETED';
-            const isCurrent = index === activeStopIndex && !isDone;
-            return (
-              <View
-                key={stop.id}
-                style={[
-                  styles.stepDot,
-                  isDone && styles.stepDotDone,
-                  isCurrent && styles.stepDotCurrent,
-                ]}>
-                {isDone ? (
-                  <Icon name="check" size={11} color="#FFFFFF" />
-                ) : (
-                  <Text
-                    style={[
-                      styles.stepDotNumber,
-                      isCurrent && styles.stepDotNumberCurrent,
-                    ]}>
-                    {stop.stop_number}
-                  </Text>
-                )}
+            <View style={styles.vehicleTop}>
+              <View style={styles.truckBadge}>
+                <Icon name="route" size={13} color={Colors.textPrimary} />
+                <Text style={styles.truckBadgeText}>
+                  {[vehicleName, trip.vehicle?.vehicleType].filter(Boolean).join(' - ') || trip.tripNumber}
+                </Text>
               </View>
-            );
-          })}
-        </View>
+              <Text style={styles.photoCredit}>
+                {trip.tripNumber} • {progress.total} Stops
+              </Text>
+            </View>
 
-        <View style={styles.progressFooter}>
-          <Icon name="clock" size={15} color={Colors.textSecondary} />
-          <Text style={styles.progressFooterLabel}>Next delivery window</Text>
-          <Text style={styles.progressFooterValue}>
-            {stops[activeStopIndex]?.window ?? 'In Progress'}
-          </Text>
-        </View>
-      </Card>
-
-      {/* Sequential Stop List */}
-      <View style={styles.sectionHeaderRow}>
-        <Text style={styles.sectionTitle}>Sequential Stops</Text>
-        <Text style={styles.sectionMeta}>{remainingStopsCount} remaining</Text>
-      </View>
-
-      <View style={styles.stopsList}>
-        {stops.map((stop, index) => {
-          const isDone = stop.status === 'COMPLETED';
-          const isCurrent = index === activeStopIndex && !isDone;
-          const isPending = stop.status === 'PENDING' && !isCurrent;
-
-          // Time window badge constraint check
-          const isMorningUrgent =
-            stop.window.toLowerCase().includes('before') ||
-            (stop.store_name.toLowerCase().includes('fresh') &&
-              stop.window.includes('8:00'));
-
-          return (
-            <Pressable
-              key={stop.id}
-              onPress={() => handleOpenStop(stop)}
-              accessibilityRole="button"
-              accessibilityLabel={`Stop ${stop.stop_number}: ${stop.store_name}`}
-              style={({ pressed }) => [
-                styles.stopCardWrapper,
-                isCurrent && styles.stopCardCurrent,
-                isDone && styles.stopCardDone,
-                pressed && { opacity: 0.93 },
-              ]}>
-              <View style={styles.stopCardInner}>
-                {/* Stop Index Column */}
-                <View style={styles.stopIndexColumn}>
-                  <Text style={styles.stopIndexLabel}>STOP</Text>
-                  <Text
-                    style={[
-                      styles.stopIndexNumber,
-                      isCurrent && { color: '#8A5900' },
-                      isDone && { color: W.greenDark },
-                    ]}>
-                    {String(stop.stop_number).padStart(2, '0')}
+            <View style={styles.vehicleContent}>
+              <View style={styles.vehicleMetaGrid}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.metaLabel}>DRIVER</Text>
+                  <Text style={styles.metaValue} numberOfLines={1}>
+                    {driver?.fullName ?? '—'}
                   </Text>
                 </View>
+                <View style={{ flex: 1.3 }}>
+                  <Text style={styles.metaLabel}>LOAD</Text>
+                  <Text style={styles.metaValue}>
+                    {progress.totalItems} Items • {formatKg(progress.totalWeightKg)}
+                  </Text>
+                </View>
+              </View>
 
-                {/* Stop Content Column */}
-                <View style={styles.stopContentColumn}>
-                  {/* Store Name & Status Badge Row */}
-                  <View style={styles.stopTitleRow}>
-                    <View style={{ flex: 1, minWidth: 0, paddingRight: 6 }}>
-                      <Text style={styles.storeNameText} numberOfLines={1}>
-                        {stop.store_name}
-                      </Text>
-                      <View style={styles.addressRow}>
-                        <Icon name="pin" size={13} color={Colors.textSecondary} />
-                        <Text style={styles.addressText} numberOfLines={1}>
-                          {stop.address}
-                        </Text>
-                      </View>
+              {departedAt || trip.bay ? (
+                <View style={styles.departureBar}>
+                  <Icon name="clock" size={16} color={Colors.surfaceWhite} />
+                  <Text style={styles.departureText}>
+                    {departedAt ? `Departure ${departedAt}` : `Bay ${trip.bay}`}
+                  </Text>
+                  {trip.status === 'en_route' ? (
+                    <View style={styles.scheduleBadge}>
+                      <View style={styles.scheduleDot} />
+                      <Text style={styles.scheduleText}>En route</Text>
                     </View>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
+          </View>
 
-                    {/* Status Indicator Badge */}
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        isDone && styles.statusBadgeCompleted,
-                        isCurrent && styles.statusBadgeCurrent,
-                        isPending && styles.statusBadgePending,
-                      ]}>
-                      {isDone && <Icon name="check" size={12} color={W.greenDark} />}
-                      <Text
-                        style={[
-                          styles.statusBadgeText,
-                          isDone && styles.statusBadgeTextCompleted,
-                          isCurrent && styles.statusBadgeTextCurrent,
-                          isPending && styles.statusBadgeTextPending,
-                        ]}>
-                        {isDone ? 'Completed' : isCurrent ? 'Current Stop' : 'Upcoming'}
+          {/* Route Progress Card */}
+          <Card style={styles.progressCard}>
+            <View style={styles.progressHeaderRow}>
+              <View>
+                <Label size={9} spacing={0.11}>
+                  ROUTE PROGRESS
+                </Label>
+                <Text style={styles.progressTitle}>
+                  {progress.closed} of {progress.total} Stops Completed
+                </Text>
+              </View>
+              <Text style={styles.progressPercentage}>{progress.percent}%</Text>
+            </View>
+
+            <View style={styles.progressBarTrack}>
+              <View style={[styles.progressBarFill, { width: `${progress.percent}%` }]} />
+            </View>
+
+            <View style={styles.stepDotsRow}>
+              {stops.map((stop, index) => {
+                const kind = stopKind(stops, index);
+                const isClosed = kind === 'done' || kind === 'failed';
+                return (
+                  <View
+                    key={stop.id}
+                    style={[
+                      styles.stepDot,
+                      isClosed && styles.stepDotDone,
+                      kind === 'current' && styles.stepDotCurrent,
+                    ]}>
+                    {isClosed ? (
+                      <Icon name={kind === 'failed' ? 'x' : 'check'} size={11} color="#FFFFFF" />
+                    ) : (
+                      <Text style={[styles.stepDotNumber, kind === 'current' && styles.stepDotNumberCurrent]}>
+                        {stop.sequence}
                       </Text>
-                    </View>
+                    )}
                   </View>
+                );
+              })}
+            </View>
 
-                  {/* Badges Row: Time Window & Temperature */}
-                  <View style={styles.badgesRow}>
-                    {/* Time Window Badge */}
-                    <View
-                      style={[
-                        styles.chipBadge,
-                        isMorningUrgent ? styles.chipWarning : styles.chipNeutral,
-                      ]}>
-                      <Icon
-                        name={isMorningUrgent ? 'alert' : 'clock'}
-                        size={13}
-                        color={isMorningUrgent ? '#A65F00' : Colors.textPrimary}
-                      />
+            {activeStop ? (
+              <View style={styles.progressFooter}>
+                <Icon name="clock" size={15} color={Colors.textSecondary} />
+                <Text style={styles.progressFooterLabel}>Next delivery window</Text>
+                <Text style={styles.progressFooterValue}>{activeStop.window ?? 'Not set'}</Text>
+              </View>
+            ) : null}
+          </Card>
+
+          {/* Sequential Stop List */}
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Sequential Stops</Text>
+            <Text style={styles.sectionMeta}>{progress.remaining} remaining</Text>
+          </View>
+
+          <View style={styles.stopsList}>
+            {stops.map((stop, index) => {
+              const kind = stopKind(stops, index);
+              const isDone = kind === 'done' || kind === 'failed';
+              const isCurrent = kind === 'current';
+              const isPending = kind === 'upcoming';
+              const distance = isDone ? null : distanceLabel(coords, stop);
+              const chilled = stop.temp === 'chilled';
+
+              return (
+                <Pressable
+                  key={stop.id}
+                  onPress={() => handleOpenStop(stop)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Stop ${stop.sequence}: ${stop.storeName}`}
+                  style={({ pressed }) => [
+                    styles.stopCardWrapper,
+                    isCurrent && styles.stopCardCurrent,
+                    isDone && styles.stopCardDone,
+                    pressed && { opacity: 0.93 },
+                  ]}>
+                  <View style={styles.stopCardInner}>
+                    <View style={styles.stopIndexColumn}>
+                      <Text style={styles.stopIndexLabel}>STOP</Text>
                       <Text
                         style={[
-                          styles.chipText,
-                          isMorningUrgent && { color: '#8A5900', ...font(800) },
+                          styles.stopIndexNumber,
+                          isCurrent && { color: '#8A5900' },
+                          isDone && { color: kind === 'failed' ? Colors.warningOrange : W.greenDark },
                         ]}>
-                        {stop.window}
+                        {padStop(stop.sequence)}
                       </Text>
                     </View>
 
-                    {/* Temperature Badge */}
-                    <View
-                      style={[
-                        styles.chipBadge,
-                        stop.is_chilled === 1 ? styles.chipChilled : styles.chipAmbient,
-                      ]}>
-                      {stop.is_chilled === 1 ? (
-                        <>
-                          <Icon name="snow" size={14} color="#08759E" />
-                          <Text style={[styles.chipText, { color: '#08759E', ...font(800) }]}>
-                            Chilled
+                    <View style={styles.stopContentColumn}>
+                      <View style={styles.stopTitleRow}>
+                        <View style={{ flex: 1, minWidth: 0, paddingRight: 6 }}>
+                          <Text style={styles.storeNameText} numberOfLines={1}>
+                            {stop.storeName}
                           </Text>
-                        </>
-                      ) : (
-                        <>
-                          <Icon name="box" size={13} color={Colors.textSecondary} />
-                          <Text style={[styles.chipText, { color: Colors.textSecondary }]}>
-                            Ambient
+                          {stop.address || distance ? (
+                            <View style={styles.addressRow}>
+                              <Icon name="pin" size={13} color={Colors.textSecondary} />
+                              <Text style={styles.addressText} numberOfLines={1}>
+                                {[stop.address, distance].filter(Boolean).join(' • ')}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
+
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            isDone && styles.statusBadgeCompleted,
+                            isCurrent && styles.statusBadgeCurrent,
+                            isPending && styles.statusBadgePending,
+                          ]}>
+                          {kind === 'done' && <Icon name="check" size={12} color={W.greenDark} />}
+                          <Text
+                            style={[
+                              styles.statusBadgeText,
+                              isDone && styles.statusBadgeTextCompleted,
+                              isCurrent && styles.statusBadgeTextCurrent,
+                              isPending && styles.statusBadgeTextPending,
+                            ]}>
+                            {stopKindLabel(kind)}
                           </Text>
-                        </>
+                        </View>
+                      </View>
+
+                      <View style={styles.badgesRow}>
+                        {stop.window ? (
+                          <View style={[styles.chipBadge, styles.chipNeutral]}>
+                            <Icon name="clock" size={13} color={Colors.textPrimary} />
+                            <Text style={styles.chipText}>{stop.window}</Text>
+                          </View>
+                        ) : null}
+
+                        <View style={[styles.chipBadge, chilled ? styles.chipChilled : styles.chipAmbient]}>
+                          <Icon
+                            name={chilled ? 'snow' : 'box'}
+                            size={chilled ? 14 : 13}
+                            color={chilled ? '#08759E' : Colors.textSecondary}
+                          />
+                          <Text
+                            style={[
+                              styles.chipText,
+                              chilled ? { color: '#08759E', ...font(800) } : { color: Colors.textSecondary },
+                            ]}>
+                            {chilled ? 'Chilled' : 'Ambient'}
+                          </Text>
+                        </View>
+
+                        <View style={[styles.chipBadge, styles.chipNeutral]}>
+                          <Text style={styles.chipText}>
+                            {stop.itemCount} items • {formatKg(stop.weightKg)}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {isCurrent && index === activeIndex && (
+                        <View style={styles.openStopButton}>
+                          <Text style={styles.openStopButtonText}>Open Stop</Text>
+                          <Icon name="chevron" size={16} color={Colors.textPrimary} />
+                        </View>
                       )}
                     </View>
-
-                    {/* Weight / Item count pill */}
-                    <View style={[styles.chipBadge, styles.chipNeutral]}>
-                      <Text style={styles.chipText}>
-                        {stop.items_count} items • {stop.weight_kg} kg
-                      </Text>
-                    </View>
                   </View>
-
-                  {/* Primary CTA for Current Stop */}
-                  {isCurrent && (
-                    <View
-                      style={styles.openStopButton}>
-                      <Text style={styles.openStopButtonText}>Open Stop</Text>
-                      <Icon name="chevron" size={16} color={Colors.textPrimary} />
-                    </View>
-                  )}
-                </View>
-              </View>
-            </Pressable>
-          );
-        })}
-      </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </>
+      )}
     </Screen>
   );
 }

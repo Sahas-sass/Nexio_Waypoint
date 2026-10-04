@@ -2,21 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
-import { Camera, X, Flashlight, RefreshCw, AlertCircle, Barcode } from "lucide-react";
-import { playScannerSound, triggerHapticFeedback } from "../utils/scannerFeedback";
+import { Camera, X, RefreshCw, AlertCircle } from "lucide-react";
 
 interface CameraBarcodeScannerModalProps {
-  isOpen: boolean;
   onClose: () => void;
   onScanSuccess: (decodedText: string) => void;
-  availablePalletSkus?: string[];
 }
 
+/** Rendered only while open; unmounting stops the camera. */
 export default function CameraBarcodeScannerModal({
-  isOpen,
   onClose,
   onScanSuccess,
-  availablePalletSkus = [],
 }: CameraBarcodeScannerModalProps) {
   const [scannerError, setScannerError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
@@ -24,21 +20,16 @@ export default function CameraBarcodeScannerModal({
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const readerElementId = "loader-barcode-reader";
 
+  // Keep latest callbacks in refs so parent re-renders don't restart the camera
+  const onScanRef = useRef(onScanSuccess);
+  const onCloseRef = useRef(onClose);
   useEffect(() => {
-    if (!isOpen) {
-      if (scannerRef.current) {
-        scannerRef.current
-          .stop()
-          .then(() => scannerRef.current?.clear())
-          .catch(() => {});
-        scannerRef.current = null;
-      }
-      return;
-    }
+    onScanRef.current = onScanSuccess;
+    onCloseRef.current = onClose;
+  });
 
+  useEffect(() => {
     let isMounted = true;
-    setIsInitializing(true);
-    setScannerError(null);
 
     const startScanner = async () => {
       try {
@@ -74,10 +65,8 @@ export default function CameraBarcodeScannerModal({
           config,
           (decodedText) => {
             if (!isMounted) return;
-            playScannerSound("success");
-            triggerHapticFeedback([100]);
-            onScanSuccess(decodedText);
-            onClose();
+            onScanRef.current(decodedText);
+            onCloseRef.current();
           },
           () => {
             // Frame parse error (ignore continuous scan misses)
@@ -85,16 +74,16 @@ export default function CameraBarcodeScannerModal({
         );
 
         if (isMounted) setIsInitializing(false);
-      } catch (err: any) {
+      } catch {
         if (!isMounted) return;
-        console.warn("Camera init warning:", err);
         setScannerError(
-          "Camera access unavailable or permission denied. You can use the quick-scan buttons or manual SKU input below."
+          "Camera access unavailable or permission denied. Enter the pallet SKU manually below."
         );
         setIsInitializing(false);
       }
     };
 
+    // Defer start until the reader element is painted into the DOM
     const timer = setTimeout(() => {
       startScanner();
     }, 250);
@@ -110,23 +99,13 @@ export default function CameraBarcodeScannerModal({
         scannerRef.current = null;
       }
     };
-  }, [isOpen, onClose, onScanSuccess]);
-
-  if (!isOpen) return null;
+  }, []);
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualSku.trim()) return;
-    playScannerSound("success");
-    triggerHapticFeedback([80]);
     onScanSuccess(manualSku.trim());
-    onClose();
-  };
-
-  const handleQuickSelect = (sku: string) => {
-    playScannerSound("success");
-    triggerHapticFeedback([80]);
-    onScanSuccess(sku);
+    setManualSku("");
     onClose();
   };
 
@@ -184,33 +163,11 @@ export default function CameraBarcodeScannerModal({
             </div>
           )}
 
-          {/* Quick Simulation Buttons for Easy Testing / Demo */}
-          {availablePalletSkus.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
-                <Barcode className="w-3.5 h-3.5 text-gray-500" />
-                <span>Quick Select SKU:</span>
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {availablePalletSkus.slice(0, 4).map((sku) => (
-                  <button
-                    key={sku}
-                    type="button"
-                    onClick={() => handleQuickSelect(sku)}
-                    className="px-2.5 py-1.5 bg-gray-100 hover:bg-amber-100 hover:text-amber-900 text-gray-700 text-xs font-mono font-bold rounded-lg border border-gray-200 transition-colors cursor-pointer"
-                  >
-                    {sku}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Manual Input Fallback */}
           <form onSubmit={handleManualSubmit} className="pt-2 flex items-center gap-2">
             <input
               type="text"
-              placeholder="Or type SKU manually (e.g. CH-1048)..."
+              placeholder="Or type SKU manually..."
               value={manualSku}
               onChange={(e) => setManualSku(e.target.value)}
               className="flex-1 px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-waypoint-yellow"

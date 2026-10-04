@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { CheckCircle2, RefreshCw, AlertTriangle } from "lucide-react";
-import { TripVehicle, PastLogEntry, PalletItem, ReeferTempCheck } from "../types";
+import { CheckCircle2, RefreshCw, AlertTriangle, Truck } from "lucide-react";
+import { TripVehicle, PastLogEntry, PalletItem, ReeferTempCheck, ExceptionReasonCode } from "../types";
 import { useUserProfile } from "@/app/profile/useUserProfile";
 import { useTripQueue } from "../hooks/useTripQueue";
 
@@ -24,7 +24,6 @@ function TripQueueContent() {
   const { profile } = useUserProfile();
 
   // Active View & Modals state
-  const [currentView, setCurrentView] = useState<"queue" | "verify" | "logs">("queue");
   const [selectedTripId, setSelectedTripId] = useState<string>("");
   const [isCameraScannerOpen, setIsCameraScannerOpen] = useState(false);
   const [isSealModalOpen, setIsSealModalOpen] = useState(false);
@@ -56,26 +55,18 @@ function TripQueueContent() {
     confirmSealAndDispatch,
   } = useTripQueue();
 
-  // Sync tab query parameter with currentView
-  useEffect(() => {
-    const tab = searchParams.get("tab");
-    if (tab === "logs") {
-      setCurrentView("logs");
-    } else if (tab === "verify") {
-      setCurrentView("verify");
-    } else {
-      setCurrentView("queue");
-    }
-  }, [searchParams]);
+  // The active view lives in the URL (?tab=verify|logs) so the bottom dock stays in sync
+  const tab = searchParams.get("tab");
+  const currentView: "queue" | "verify" | "logs" = tab === "logs" || tab === "verify" ? tab : "queue";
+  const setCurrentView = (view: "queue" | "verify" | "logs") =>
+    router.push(view === "queue" ? "/trip-queue" : `/trip-queue?tab=${view}`);
 
   const selectedTrip = trips.find((t) => t.id === selectedTripId) || trips[0];
-  const allPallets = selectedTrip ? selectedTrip.stops.flatMap((s) => s.pallets) : [];
-  const unverifiedSkus = allPallets.filter((p) => !p.verified).map((p) => p.sku);
 
-  // Dynamic user signature
+  // Loader sign-off derived from the signed-in profile (editable in the seal dialog)
   const defaultSignature = profile?.fullName
-    ? `Loader ${profile.fullName} (${profile.employeeId || "LDR-004"})`
-    : "Loader osal (LDR-004)";
+    ? `${profile.fullName}${profile.employeeId ? ` (${profile.employeeId})` : ""}`
+    : "";
 
   // Handlers delegated to useTripQueue hook
   const handleTogglePallet = async (palletId: string) => {
@@ -90,7 +81,7 @@ function TripQueueContent() {
     palletSku?: string;
     orderId?: string;
     storeId?: string;
-    reasonCode: "CARTON_DAMAGED" | "LEAKAGE_DETECTED" | "TEMPERATURE_EXCURSION" | "MISSING_FROM_STAGING" | "OTHER";
+    reasonCode: ExceptionReasonCode;
     notes: string;
   }) => {
     await submitException(selectedTrip, data, profile?.id);
@@ -100,6 +91,7 @@ function TripQueueContent() {
     sealNumber: string;
     hasDiscrepancy: boolean;
     discrepancyNote: string;
+    discrepancyReason?: ExceptionReasonCode;
     signature: string;
     tempCheck?: ReeferTempCheck;
   }) => {
@@ -112,16 +104,16 @@ function TripQueueContent() {
       profile?.id
     );
 
-    if (logEntry) {
-      setDispatchedPassData({
-        trip: selectedTrip,
-        sealNumber: data.sealNumber,
-        signature: data.signature,
-        hasDiscrepancy: data.hasDiscrepancy,
-        discrepancyNote: data.discrepancyNote,
-      });
-      setIsGatepassModalOpen(true);
-    }
+    if (!logEntry) throw new Error("Dispatch failed – see notification for details.");
+
+    setDispatchedPassData({
+      trip: selectedTrip,
+      sealNumber: data.sealNumber,
+      signature: data.signature,
+      hasDiscrepancy: data.hasDiscrepancy,
+      discrepancyNote: data.discrepancyNote,
+    });
+    setIsGatepassModalOpen(true);
   };
 
   return (
@@ -159,8 +151,8 @@ function TripQueueContent() {
           trips={trips}
           isLoading={isLoading}
           onRefresh={loadDatabaseData}
-          assignedBay={profile?.assignedBay || "Bay 04"}
-          stationName={profile?.station || "Station 04"}
+          assignedBay={profile?.assignedBay}
+          stationName={profile?.station}
           onSelectTrip={(id) => {
             setSelectedTripId(id);
             setCurrentView("verify");
@@ -171,6 +163,20 @@ function TripQueueContent() {
       {/* ========================================================= */}
       {/* SCREEN 2: LOADING VERIFICATION CHECKLIST (Reverse-Order)   */}
       {/* ========================================================= */}
+      {currentView === "verify" && !selectedTrip && !isLoading && (
+        <div className="p-12 text-center bg-white rounded-3xl border border-gray-200 shadow-xs">
+          <Truck className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+          <h3 className="text-sm font-bold text-gray-800">No trip selected</h3>
+          <button
+            type="button"
+            onClick={() => setCurrentView("queue")}
+            className="mt-3 px-4 py-2 bg-waypoint-yellow rounded-xl text-xs font-bold cursor-pointer"
+          >
+            Back to Trip Queue
+          </button>
+        </div>
+      )}
+
       {currentView === "verify" && selectedTrip && (
         <VerificationChecklistView
           trip={selectedTrip}
@@ -192,10 +198,8 @@ function TripQueueContent() {
       {currentView === "logs" && (
         <LoadingLogsView
           logs={pastLogs}
-          onBackToQueue={() => {
-            router.push("/trip-queue");
-            setCurrentView("queue");
-          }}
+          isLoading={isLoading}
+          onBackToQueue={() => setCurrentView("queue")}
           onSelectLogForAudit={(log) => setSelectedLogForAudit(log)}
         />
       )}
@@ -203,19 +207,15 @@ function TripQueueContent() {
       {/* ========================================================= */}
       {/* MODAL 1: LIVE CAMERA BARCODE SCANNER                       */}
       {/* ========================================================= */}
-      <CameraBarcodeScannerModal
-        isOpen={isCameraScannerOpen}
-        onClose={() => setIsCameraScannerOpen(false)}
-        onScanSuccess={handleBarcodeScan}
-        availablePalletSkus={unverifiedSkus}
-      />
+      {isCameraScannerOpen && (
+        <CameraBarcodeScannerModal onClose={() => setIsCameraScannerOpen(false)} onScanSuccess={handleBarcodeScan} />
+      )}
 
       {/* ========================================================= */}
       {/* MODAL 2: CONFIRM LOADING & SEAL TRUCK DIALOG               */}
       {/* ========================================================= */}
-      {selectedTrip && (
+      {selectedTrip && isSealModalOpen && (
         <SealTruckModal
-          isOpen={isSealModalOpen}
           onClose={() => setIsSealModalOpen(false)}
           trip={selectedTrip}
           defaultSignature={defaultSignature}
@@ -270,21 +270,6 @@ function TripQueueContent() {
 }
 
 export default function TripQueuePage() {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) {
-    return (
-      <div className="p-12 text-center text-gray-500 font-bold flex items-center justify-center gap-2">
-        <RefreshCw className="w-5 h-5 animate-spin text-waypoint-orange" />
-        <span>Connecting to Warehouse Live Database...</span>
-      </div>
-    );
-  }
-
   return (
     <Suspense
       fallback={

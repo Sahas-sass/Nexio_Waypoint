@@ -1,151 +1,76 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { 
-  Search, 
-  Calendar, 
-  Bell, 
-  Package, 
-  BarChart3, 
-  MapPin, 
-  SlidersHorizontal, 
-  AlertTriangle, 
-  MoreHorizontal, 
-  Clock, 
-  Check, 
-  ChevronDown, 
-  X,
-  FileSpreadsheet,
-  Loader2
-} from "lucide-react";
-import UserProfileDropdown from "@/app/profile/UserProfileDropdown";
+import { Suspense, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Package, BarChart3, MapPin, Clock, Check, ChevronDown, X, Calendar, Bell, Loader2 } from "lucide-react";
 import { useUserProfile } from "@/app/profile/useUserProfile";
 import { recordUserActivity } from "@/app/profile/activityLogger";
-import { 
-  fetchOrdersForDeferralReview, 
-  submitDeferrals, 
-  DeferralReviewItem 
-} from "@/app/(dispatcher)/services";
+import PageHeader from "../components/PageHeader";
+import KpiCard from "../components/KpiCard";
+import { EmptyBlock, ErrorBlock, LoadingBlock } from "../components/StatusBlocks";
+import { usePlanningData } from "../hooks/usePlanningData";
+import { submitDeferrals } from "../services/deferralService";
+import { allocateOrders } from "../utils/allocation";
+import { DEFERRAL_REASONS } from "../utils/constants";
+import { deferralSummary, nextRunOptions } from "../utils/deferral";
+import { isoDate } from "../utils/format";
+import DeferralTable from "./components/DeferralTable";
+import OptionPicker from "./components/OptionPicker";
 
-const REASON_OPTIONS = [
-  "Fleet Capacity",
-  "Weight Limit",
-  "Vehicle Unavailable",
-  "Window Conflict",
-  "Reefer Shortage",
-];
-
-const NEXT_RUN_OPTIONS = [
-  "Tomorrow - 10:00 AM",
-  "Tomorrow - 02:00 PM",
-  "Day After - 08:00 AM",
-];
-
-export default function DeferralManagerPage() {
+function DeferralManager() {
+  const params = useSearchParams();
   const { profile } = useUserProfile();
-  const [orders, setOrders] = useState<DeferralReviewItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [planningDate, setPlanningDate] = useState(() => {
+    const d = params.get("date");
+    return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : isoDate(new Date(), 1);
+  });
+  const { data, loading, error, reload } = usePlanningData(planningDate);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedReason, setSelectedReason] = useState("Fleet Capacity");
-  const [selectedNextRun, setSelectedNextRun] = useState("Tomorrow - 10:00 AM");
-  const [showReasonDropdown, setShowReasonDropdown] = useState(false);
-  const [showRunDropdown, setShowRunDropdown] = useState(false);
+  const [selectedReason, setSelectedReason] = useState<string>(DEFERRAL_REASONS[0]);
+  const runOptions = useMemo(() => nextRunOptions(planningDate), [planningDate]);
+  const [selectedRun, setSelectedRun] = useState<string | null>(null);
+  const nextRun = selectedRun && runOptions.includes(selectedRun) ? selectedRun : runOptions[0];
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [confirmedNotification, setConfirmedNotification] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null);
 
-  // Load orders for review from Dispatcher Service
-  useEffect(() => {
-    let mounted = true;
-    async function loadData() {
-      try {
-        const reviewOrders = await fetchOrdersForDeferralReview();
-        if (mounted) {
-          setOrders(reviewOrders);
-          if (reviewOrders.length >= 2) {
-            setSelectedIds([reviewOrders[0].id, reviewOrders[1].id]);
-          }
-        }
-      } catch (err) {
-        console.error("Failed to load deferral review items:", err);
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    }
-    loadData();
-    return () => { mounted = false; };
-  }, []);
+  // Orders that cannot fit the active fleet under the planning constraints.
+  const deferred = useMemo(() => (data ? allocateOrders(data.orders, data.vehicles).deferred : []), [data]);
+  const q = searchQuery.toLowerCase();
+  const filtered = deferred.filter(
+    ({ order, reason }) =>
+      !q || order.storeName.toLowerCase().includes(q) || order.orderNumber.toLowerCase().includes(q) || reason.toLowerCase().includes(q),
+  );
+  const selected = deferred.filter((d) => selectedIds.includes(d.order.id));
+  const totals = deferralSummary(deferred);
+  const selectedTotals = deferralSummary(selected);
 
-  // Toggle single order selection
-  const toggleOrder = (id: string) => {
-    setSelectedIds((prev) => 
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    );
-  };
+  const toggle = (id: string) => setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const toggleAll = () =>
+    setSelectedIds(selectedIds.length === filtered.length ? [] : filtered.map((d) => d.order.id));
 
-  // Toggle select all
-  const toggleSelectAll = () => {
-    if (selectedIds.length === filteredOrders.length) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(filteredOrders.map((o) => o.id));
-    }
-  };
-
-  // Filtered orders
-  const filteredOrders = orders.filter((order) => {
-    const q = searchQuery.toLowerCase();
-    return (
-      order.storeName.toLowerCase().includes(q) ||
-      order.orderNumber.toLowerCase().includes(q) ||
-      order.reason.toLowerCase().includes(q)
-    );
-  });
-
-  // Calculate selected total volume
-  const selectedOrders = orders.filter((o) => selectedIds.includes(o.id));
-  const selectedVolume = selectedOrders.reduce((sum, o) => sum + o.volume, 0);
-
-  // Dynamic Metrics
-  const ordersAffectedCount = orders.length > 0 ? orders.length : 14;
-  const totalShortfallVolume = orders.reduce((acc, o) => acc + o.volume, 0) || 3.2;
-  const uniqueStoresCount = new Set(orders.map(o => o.storeName)).size || 6;
-
-  // Confirm deferral action
-  const handleConfirmDeferral = async () => {
-    if (selectedIds.length === 0) return;
-    const count = selectedIds.length;
-
+  const handleConfirm = async () => {
+    if (selected.length === 0 || !nextRun) return;
+    setIsSubmitting(true);
     try {
-      setIsSubmitting(true);
       const res = await submitDeferrals({
-        orderIds: selectedIds,
+        orders: selected.map((d) => d.order),
         reason: selectedReason,
-        rescheduledRun: selectedNextRun,
-        deferredBy: profile?.id
+        rescheduledRun: nextRun,
+        deferredBy: profile?.id,
       });
-
-      setConfirmedNotification(res.message);
-
-      // Record action into dynamic user profile activity stream
+      setToast({ text: `Deferred ${res.count} orders to ${nextRun}. Store managers notified.`, ok: true });
       if (profile?.id) {
         recordUserActivity(profile.id, {
-          title: `Deferred ${count} orders`,
-          meta: `Reason: ${selectedReason} · Rescheduled: ${selectedNextRun}`,
+          title: `Deferred ${res.count} orders`,
+          meta: `Reason: ${selectedReason} · Rescheduled: ${nextRun}`,
           type: "truck",
         });
       }
-
-      // Update local state by tagging reason
-      setOrders(prev => 
-        prev.map(o => selectedIds.includes(o.id) ? { ...o, reason: selectedReason, rescheduledRun: selectedNextRun } : o)
-      );
-
-      setTimeout(() => {
-        setConfirmedNotification(null);
-      }, 6000);
-    } catch (err: any) {
-      setConfirmedNotification(`Successfully processed ${count} deferrals.`);
+      setSelectedIds([]);
+      reload();
+    } catch (err: unknown) {
+      setToast({ text: err instanceof Error ? err.message : "Failed to defer orders", ok: false });
     } finally {
       setIsSubmitting(false);
     }
@@ -153,389 +78,136 @@ export default function DeferralManagerPage() {
 
   return (
     <div className="max-w-360 mx-auto space-y-6 pb-28 relative">
-      
-      {/* Toast Notification Alert */}
-      {confirmedNotification && (
-        <div className="fixed top-6 right-6 z-50 bg-[#16A34A] text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-300">
+      {toast && (
+        <div className={`fixed top-6 right-6 z-50 ${toast.ok ? "bg-[#16A34A]" : "bg-red-600"} text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3`}>
           <Check className="w-5 h-5 shrink-0" />
-          <p className="text-xs font-bold leading-relaxed">{confirmedNotification}</p>
-          <button 
-            onClick={() => setConfirmedNotification(null)}
-            className="p-1 hover:bg-white/20 rounded-lg transition-colors ml-2"
-          >
+          <p className="text-xs font-bold leading-relaxed">{toast.text}</p>
+          <button onClick={() => setToast(null)} aria-label="Dismiss" className="p-1 hover:bg-white/20 rounded-lg transition-colors ml-2">
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
-      {/* 1. TOP HEADER SECTION */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <p className="text-waypoint-orange text-[10px] font-bold tracking-widest uppercase mb-1">
-            FLEET OPERATIONS
-          </p>
-          <h1 className="text-3xl font-bold text-waypoint-text tracking-tight">
-            Deferral Manager
-          </h1>
-          <p className="text-waypoint-secondary text-sm font-medium mt-1">
-            Review orders that cannot be delivered in the current run
-          </p>
-        </div>
+      <PageHeader
+        title="Deferral Manager"
+        subtitle="Review orders that cannot be delivered in the current run"
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        date={planningDate}
+        onDateChange={(d) => {
+          setPlanningDate(d);
+          setSelectedIds([]);
+        }}
+      />
 
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Search Bar */}
-          <div className="relative flex items-center">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3.5" />
-            <input 
-              type="text" 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search orders, vehicles..." 
-              className="pl-10 pr-12 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-waypoint-yellow w-64 shadow-2xs font-medium placeholder:font-normal"
-            />
-            <div className="absolute right-3 px-1.5 py-0.5 bg-gray-100 border border-gray-200 rounded text-[10px] font-bold text-gray-400">
-              ⌘K
-            </div>
-          </div>
-
-          {/* Date Picker */}
-          <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-bold text-waypoint-text hover:bg-gray-50 transition-colors shadow-2xs">
-            <Calendar className="w-4 h-4 text-gray-400" />
-            <span>Tue, 21 May</span>
-          </button>
-
-          {/* Notification Bell */}
-          <button className="p-2.5 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors relative shadow-2xs">
-            <Bell className="w-5 h-5 text-gray-600" />
-            <span className="absolute top-2 right-2.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
-          </button>
-
-          {/* User Profile */}
-          <UserProfileDropdown layoutVariant="header" />
-        </div>
-      </div>
-
-      {/* 2. TOP KPI CARDS (3 LARGE METRICS) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        
-        {/* Card 1: Orders Affected */}
-        <div className="p-5 rounded-[22px] border border-[#E8E8E3]/80 bg-white shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] flex flex-col justify-between min-h-31.5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#FFF8E6] text-amber-600 flex items-center justify-center shrink-0">
-              <Package className="w-5 h-5" strokeWidth={2} />
-            </div>
-            <p className="text-xs font-semibold text-waypoint-secondary">Orders Affected</p>
-          </div>
-          <div className="mt-2.5">
-            <p className="text-[32px] font-bold text-waypoint-text leading-none tracking-tight">{ordersAffectedCount}</p>
-            <p className="text-xs text-gray-400 font-medium flex items-center gap-1.5 mt-2">
-              <span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span>
-              Across {uniqueStoresCount} store locations
-            </p>
-          </div>
-        </div>
-
-        {/* Card 2: Capacity Shortfall */}
-        <div className="p-5 rounded-[22px] border border-[#E8E8E3]/80 bg-white shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] flex flex-col justify-between min-h-31.5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#FFF8E6] text-amber-600 flex items-center justify-center shrink-0">
-              <BarChart3 className="w-5 h-5" strokeWidth={2} />
-            </div>
-            <p className="text-xs font-semibold text-waypoint-secondary">Capacity Shortfall</p>
-          </div>
-          <div className="mt-2.5">
-            <p className="text-[32px] font-bold text-waypoint-text leading-none tracking-tight">{totalShortfallVolume.toFixed(1)} m³</p>
-            <p className="text-xs text-gray-400 font-medium flex items-center gap-1.5 mt-2">
-              <span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span>
-              Volume required
-            </p>
-          </div>
-        </div>
-
-        {/* Card 3: Estimated Impact */}
-        <div className="p-5 rounded-[22px] border border-[#E8E8E3]/80 bg-white shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] flex flex-col justify-between min-h-31.5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] text-blue-500 flex items-center justify-center shrink-0">
-              <MapPin className="w-5 h-5" strokeWidth={2} />
-            </div>
-            <p className="text-xs font-semibold text-waypoint-secondary">Estimated Impact</p>
-          </div>
-          <div className="mt-2.5">
-            <p className="text-[32px] font-bold text-waypoint-text leading-none tracking-tight">{uniqueStoresCount} Stores</p>
-            <p className="text-xs text-gray-400 font-medium flex items-center gap-1.5 mt-2">
-              <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
-              Managers will be notified
-            </p>
-          </div>
-        </div>
-
+        <KpiCard
+          icon={<Package className="w-5 h-5" strokeWidth={2} />}
+          iconClass="bg-[#FFF8E6] text-amber-600"
+          label="Orders Affected"
+          value={totals.orders}
+          caption={`Across ${totals.stores} store locations`}
+          dotClass="bg-amber-500"
+        />
+        <KpiCard
+          icon={<BarChart3 className="w-5 h-5" strokeWidth={2} />}
+          iconClass="bg-[#FFF8E6] text-amber-600"
+          label="Capacity Shortfall"
+          value={`${totals.volumeM3.toFixed(1)} m³`}
+          caption={`${totals.weightKg.toFixed(0)} kg not allocated`}
+          dotClass="bg-amber-500"
+        />
+        <KpiCard
+          icon={<MapPin className="w-5 h-5" strokeWidth={2} />}
+          iconClass="bg-[#EFF6FF] text-blue-500"
+          label="Estimated Impact"
+          value={`${totals.stores} Stores`}
+          caption="Managers will be notified"
+          dotClass="bg-blue-500"
+        />
       </div>
 
-      {/* 3. ORDERS REQUIRING REVIEW TABLE */}
       <div className="bg-white rounded-3xl p-6 border border-[#E8E8E3]/80 shadow-[0_12px_40px_0_rgba(32,33,36,0.05)] space-y-4">
-        
-        {/* Table Header Controls */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-[18px] font-bold text-waypoint-text tracking-tight">
-              Orders requiring review
-            </h3>
-            <p className="text-xs text-gray-400 font-medium mt-0.5">
-              Prioritized by delivery impact
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2.5">
-            <button className="flex items-center gap-2 px-3.5 py-1.5 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors shadow-2xs">
-              <SlidersHorizontal className="w-3.5 h-3.5 text-gray-500" />
-              <span>Filter</span>
-            </button>
-            <button className="flex items-center gap-2 px-3.5 py-1.5 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors shadow-2xs">
-              <FileSpreadsheet className="w-3.5 h-3.5 text-gray-500" />
-              <span>Export</span>
-            </button>
-          </div>
+        <div>
+          <h3 className="text-[18px] font-bold text-waypoint-text tracking-tight">Orders requiring review</h3>
+          <p className="text-xs text-gray-400 font-medium mt-0.5">Pending orders the fleet cannot carry under capacity, temperature, van-only and window constraints</p>
         </div>
-
-        {/* Table View */}
         <div className="overflow-x-auto">
           {loading ? (
-            <div className="py-16 flex items-center justify-center gap-2 text-gray-400">
-              <Loader2 className="w-5 h-5 animate-spin text-waypoint-orange" />
-              <span className="text-xs font-semibold">Loading orders requiring review...</span>
-            </div>
+            <LoadingBlock label="Loading orders requiring review..." />
+          ) : error ? (
+            <ErrorBlock message={error} onRetry={reload} />
+          ) : filtered.length === 0 ? (
+            <EmptyBlock label={deferred.length === 0 ? "All pending orders fit the available fleet. Nothing to defer." : "No orders match your search."} />
           ) : (
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-gray-100 text-[10px] font-bold text-gray-400 tracking-wider uppercase">
-                  <th className="py-3 px-3 w-10">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.length === filteredOrders.length && filteredOrders.length > 0}
-                      onChange={toggleSelectAll}
-                      className="w-4 h-4 rounded border-gray-300 text-waypoint-yellow focus:ring-waypoint-yellow accent-waypoint-yellow cursor-pointer"
-                    />
-                  </th>
-                  <th className="py-3 px-3">STORE</th>
-                  <th className="py-3 px-3">PRIORITY</th>
-                  <th className="py-3 px-3">DELIVERY WINDOW</th>
-                  <th className="py-3 px-3">VOLUME</th>
-                  <th className="py-3 px-3">REASON</th>
-                  <th className="py-3 px-3 text-right">ACTION</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {filteredOrders.map((order) => {
-                  const isSelected = selectedIds.includes(order.id);
-                  return (
-                    <tr 
-                      key={order.id}
-                      onClick={() => toggleOrder(order.id)}
-                      className={`group transition-colors cursor-pointer ${
-                        isSelected ? "bg-[#FEFCE8]/30" : "hover:bg-gray-50/70"
-                      }`}
-                    >
-                      {/* Checkbox */}
-                      <td className="py-4 px-3 w-10">
-                        <div 
-                          className={`w-4.5 h-4.5 rounded-md flex items-center justify-center transition-colors border ${
-                            isSelected 
-                              ? "bg-waypoint-yellow border-waypoint-yellow text-waypoint-text" 
-                              : "border-gray-300 bg-white"
-                          }`}
-                        >
-                          {isSelected && <Check className="w-3 h-3 stroke-3" />}
-                        </div>
-                      </td>
-
-                      {/* Store Info */}
-                      <td className="py-4 px-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-[#FFF8E6] text-amber-700 font-bold text-xs flex items-center justify-center shrink-0 border border-amber-200/50">
-                            {order.storeInitial}
-                          </div>
-                          <div>
-                            <p className="text-[13px] font-bold text-waypoint-text leading-tight">
-                              {order.storeName}
-                            </p>
-                            <p className="text-[11px] text-gray-400 font-medium mt-0.5">
-                              {order.orderNumber}
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Priority */}
-                      <td className="py-4 px-3">
-                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold inline-block ${
-                          order.priority === "High" 
-                            ? "bg-[#FFF8E6] text-amber-700" 
-                            : "bg-gray-100 text-gray-600"
-                        }`}>
-                          {order.priority}
-                        </span>
-                      </td>
-
-                      {/* Delivery Window */}
-                      <td className="py-4 px-3">
-                        <span className="text-xs font-semibold text-gray-600">
-                          {order.deliveryWindow}
-                        </span>
-                      </td>
-
-                      {/* Volume */}
-                      <td className="py-4 px-3">
-                        <span className="text-xs font-bold text-waypoint-text">
-                          {order.volume} m³
-                        </span>
-                      </td>
-
-                      {/* Reason */}
-                      <td className="py-4 px-3">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-amber-700">
-                          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                          <span>{order.reason}</span>
-                        </div>
-                      </td>
-
-                      {/* Action */}
-                      <td className="py-4 px-3 text-right">
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                          }}
-                          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
-                        >
-                          <MoreHorizontal className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <DeferralTable items={filtered} selectedIds={selectedIds} onToggle={toggle} onToggleAll={toggleAll} />
           )}
         </div>
-
       </div>
 
-      {/* 4. FLOATING STICKY ACTION DOCK */}
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 w-[94%] max-w-4xl">
         <div className="bg-white/95 backdrop-blur-md rounded-2xl md:rounded-[22px] px-6 py-3.5 border border-[#E8E8E3] shadow-[0_16px_50px_0_rgba(0,0,0,0.12)] flex flex-wrap md:flex-nowrap items-center justify-between gap-4">
-          
-          {/* Left Block: Summary */}
           <div className="flex items-center gap-3 shrink-0">
             <div className="w-9 h-9 rounded-xl bg-[#FFF8E6] text-amber-600 flex items-center justify-center shrink-0">
               <Clock className="w-4.5 h-4.5" strokeWidth={2} />
             </div>
             <div>
-              <p className="text-xs font-bold text-waypoint-text leading-tight">
-                Defer Selected Orders
-              </p>
+              <p className="text-xs font-bold text-waypoint-text leading-tight">Defer Selected Orders</p>
               <p className="text-[11px] text-gray-400 font-medium mt-0.5">
-                {selectedOrders.length} orders · {selectedVolume.toFixed(1)} m³ capacity
+                {selectedTotals.orders} orders · {selectedTotals.volumeM3.toFixed(1)} m³ capacity
               </p>
             </div>
           </div>
 
-          {/* Center Block: Reason & Run Pickers */}
           <div className="flex items-center gap-3 flex-wrap">
-            {/* Reason Dropdown */}
-            <div className="relative">
-              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">REASON</p>
-              <button 
-                type="button"
-                onClick={() => setShowReasonDropdown(!showReasonDropdown)}
-                className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 hover:border-gray-300 transition-colors shadow-2xs cursor-pointer"
-              >
-                <span>{selectedReason}</span>
-                <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-              </button>
-
-              {showReasonDropdown && (
-                <div className="absolute bottom-full mb-2 left-0 w-44 bg-white border border-gray-200 rounded-xl shadow-lg p-1 z-40">
-                  {REASON_OPTIONS.map((reason) => (
-                    <button
-                      key={reason}
-                      onClick={() => {
-                        setSelectedReason(reason);
-                        setShowReasonDropdown(false);
-                      }}
-                      className={`w-full text-left px-3 py-1.5 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors ${
-                        selectedReason === reason ? "bg-amber-50 text-amber-800 font-bold" : "text-gray-700"
-                      }`}
-                    >
-                      {reason}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Next Available Run Dropdown */}
-            <div className="relative">
-              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">NEXT AVAILABLE RUN</p>
-              <button 
-                type="button"
-                onClick={() => setShowRunDropdown(!showRunDropdown)}
-                className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 hover:border-gray-300 transition-colors shadow-2xs cursor-pointer"
-              >
-                <span>{selectedNextRun}</span>
-                <Calendar className="w-3.5 h-3.5 text-gray-400" />
-              </button>
-
-              {showRunDropdown && (
-                <div className="absolute bottom-full mb-2 left-0 w-52 bg-white border border-gray-200 rounded-xl shadow-lg p-1 z-40">
-                  {NEXT_RUN_OPTIONS.map((run) => (
-                    <button
-                      key={run}
-                      onClick={() => {
-                        setSelectedNextRun(run);
-                        setShowRunDropdown(false);
-                      }}
-                      className={`w-full text-left px-3 py-1.5 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors ${
-                        selectedNextRun === run ? "bg-amber-50 text-amber-800 font-bold" : "text-gray-700"
-                      }`}
-                    >
-                      {run}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Auto notification helper note */}
+            <OptionPicker
+              label="Reason"
+              value={selectedReason}
+              options={DEFERRAL_REASONS}
+              onChange={setSelectedReason}
+              icon={<ChevronDown className="w-3.5 h-3.5 text-gray-400" />}
+            />
+            {nextRun && (
+              <OptionPicker
+                label="Next available run"
+                value={nextRun}
+                options={runOptions}
+                onChange={setSelectedRun}
+                icon={<Calendar className="w-3.5 h-3.5 text-gray-400" />}
+                widthClass="w-52"
+              />
+            )}
             <div className="hidden lg:flex items-center gap-1.5 text-[10px] text-gray-400 max-w-32.5 leading-tight">
               <Bell className="w-3 h-3 text-gray-400 shrink-0" />
-              <span>Store managers will be notified automatically.</span>
+              <span>Store managers can see deferrals in their portal.</span>
             </div>
           </div>
 
-          {/* Right Block: Buttons */}
           <div className="flex items-center gap-2.5 shrink-0 ml-auto">
-            <button 
-              onClick={() => setSelectedIds([])}
-              className="text-xs font-bold text-gray-500 hover:text-gray-800 px-3 py-2 transition-colors cursor-pointer"
-            >
+            <button onClick={() => setSelectedIds([])} className="text-xs font-bold text-gray-500 hover:text-gray-800 px-3 py-2 transition-colors cursor-pointer">
               Cancel
             </button>
-            <button 
-              onClick={handleConfirmDeferral}
-              disabled={selectedIds.length === 0 || isSubmitting}
+            <button
+              onClick={handleConfirm}
+              disabled={selected.length === 0 || isSubmitting}
               className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-sm ${
-                selectedIds.length > 0 && !isSubmitting
-                  ? "bg-waypoint-yellow hover:bg-[#F0B92B] text-waypoint-text cursor-pointer" 
-                  : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                selected.length > 0 && !isSubmitting ? "bg-waypoint-yellow hover:bg-[#F0B92B] text-waypoint-text cursor-pointer" : "bg-gray-100 text-gray-400 cursor-not-allowed"
               }`}
             >
               {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
               <span>{isSubmitting ? "Processing..." : "Confirm Deferral"}</span>
             </button>
           </div>
-
         </div>
       </div>
-
     </div>
+  );
+}
+
+export default function DeferralManagerPage() {
+  return (
+    <Suspense fallback={<LoadingBlock label="Loading deferral manager..." />}>
+      <DeferralManager />
+    </Suspense>
   );
 }

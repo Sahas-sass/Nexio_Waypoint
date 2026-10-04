@@ -89,11 +89,12 @@ DELETE FROM public.store_receipts WHERE order_id = 'd0000000-0000-0000-0000-0000
 
 -- 6. Yesterday's completed run that delivered ORD-2999, with its proof of delivery
 INSERT INTO public.trips (id, trip_number, vehicle_id, driver_id, trip_date, status, bay, departure_time, dispatched_at)
-SELECT 'b1038000-0000-0000-0000-000000000007', 'TRIP 1038', '7ac4a82c-9ad3-89c2-38ab-8cb78ea6533e',
+SELECT 'b1038000-0000-0000-0000-000000000007', 'TRIP 1038', '715c49d5-ba6c-4eef-879d-04c79a414608',
        u.id, (now() AT TIME ZONE 'Asia/Colombo')::date - 1, 'completed', 'Bay 01', '06:15 AM',
        (((now() AT TIME ZONE 'Asia/Colombo')::date - 1) + TIME '06:15') AT TIME ZONE 'Asia/Colombo'
 FROM auth.users u WHERE u.email = 'driver@waypoint.com'
-ON CONFLICT (id) DO UPDATE SET trip_date = EXCLUDED.trip_date, status = 'completed', dispatched_at = EXCLUDED.dispatched_at;
+ON CONFLICT (id) DO UPDATE SET trip_date = EXCLUDED.trip_date, status = 'completed', dispatched_at = EXCLUDED.dispatched_at,
+  vehicle_id = EXCLUDED.vehicle_id, driver_id = EXCLUDED.driver_id;
 
 INSERT INTO public.trip_stops (id, trip_id, order_id, store_id, stop_sequence, estimated_arrival, status, completed_at)
 VALUES ('c1038001-0000-0000-0000-000000000001', 'b1038000-0000-0000-0000-000000000007',
@@ -110,3 +111,52 @@ SELECT 'c1038001-0000-0000-0000-000000000001', 14, 13,
        (((now() AT TIME ZONE 'Asia/Colombo')::date - 1) + TIME '08:12') AT TIME ZONE 'Asia/Colombo'
 FROM auth.users u WHERE u.email = 'driver@waypoint.com'
 ON CONFLICT (stop_id) DO UPDATE SET captured_at = EXCLUDED.captured_at, synced_at = EXCLUDED.synced_at;
+
+-- 7. Each vehicle has its own driver (brief: "Each vehicle has a driver")
+UPDATE public.vehicles v SET driver_id = u.id
+FROM (VALUES
+  ('TRK-024', 'driver@waypoint.com'),
+  ('VAN-012', 'driver2@waypoint.com'),
+  ('TRK-019', 'driver3@waypoint.com'),
+  ('VAN-016', 'driver4@waypoint.com'),
+  ('TRK-031', 'driver5@waypoint.com'),
+  ('VAN-008', 'driver6@waypoint.com'),
+  ('TRK-042', 'driver7@waypoint.com'),
+  ('TRK-055', 'driver8@waypoint.com')
+) AS m(plate, email)
+JOIN auth.users u ON u.email = m.email
+WHERE v.registration_number = m.plate;
+
+-- Trips are driven by their vehicle's assigned driver
+UPDATE public.trips t SET driver_id = v.driver_id
+FROM public.vehicles v
+WHERE t.vehicle_id = v.id AND v.driver_id IS NOT NULL AND t.driver_id IS DISTINCT FROM v.driver_id;
+
+-- 8. Tomorrow's order queue: chilled demand exceeds refrigerated capacity, so the
+--    dispatcher's allocation must defer some orders (brief: "a day when demand
+--    exceeds available capacity").
+DELETE FROM public.trip_stops WHERE order_id IN (
+  SELECT id FROM public.orders WHERE order_number LIKE 'ORD-4%' AND id::text LIKE 'd2000000-%'
+);
+INSERT INTO public.orders (id, order_number, store_id, total_weight_kg, total_volume_m3, temp_requirement,
+                           status, target_delivery_date, priority, item_count, delivery_window)
+SELECT
+  ('d2000000-0000-0000-0000-' || lpad(i::text, 12, '0'))::uuid,
+  'ORD-' || (4000 + i),
+  s.id,
+  CASE WHEN i % 3 = 0 THEN 900 ELSE 650 END,
+  CASE WHEN i % 4 = 0 THEN 4.5 ELSE 9.5 END,
+  (CASE WHEN i % 4 = 0 THEN 'ambient' ELSE 'chilled' END)::public.temp_type,
+  'pending',
+  (now() AT TIME ZONE 'Asia/Colombo')::date + 1,
+  (ARRAY['High', 'Standard', 'Low'])[1 + i % 3],
+  CASE WHEN i % 3 = 0 THEN 45 ELSE 32 END,
+  to_char(s.delivery_window_start, 'HH24:MI') || ' - ' || to_char(s.delivery_window_end, 'HH24:MI')
+FROM generate_series(1, 20) AS i
+JOIN LATERAL (
+  SELECT id, delivery_window_start, delivery_window_end FROM public.stores
+  WHERE latitude IS NOT NULL ORDER BY id OFFSET (i % 8) LIMIT 1
+) s ON true
+ON CONFLICT (id) DO UPDATE SET
+  status = 'pending', target_delivery_date = EXCLUDED.target_delivery_date,
+  deferral_reason = NULL, deferred_at = NULL, deferred_by = NULL;

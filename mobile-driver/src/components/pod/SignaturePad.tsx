@@ -1,37 +1,33 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   PanResponder,
   Pressable,
   StyleSheet,
   Text,
   View,
+  type LayoutChangeEvent,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
 import { Icon } from '@/components/waypoint/icon';
+import { signatureToPng } from '@/features/pod/utils/signatureToPng';
 import { Colors, font, Radius, Shadow, W } from '@/utils/theme';
 
 export interface SignaturePadProps {
-  onConfirm: (svgData: string) => void;
-  isConfirmed?: boolean;
-  // Compatibility with existing screen
-  signed?: boolean;
-  onChange?: (signed: boolean) => void;
+  /** PNG of the signature (base64, no data: prefix), or null when cleared. */
+  onConfirm: (pngBase64: string | null) => void;
+  isConfirmed: boolean;
 }
 
-export function SignaturePad({
-  onConfirm,
-  isConfirmed: propConfirmed,
-  signed,
-  onChange,
-}: SignaturePadProps) {
+export function SignaturePad({ onConfirm, isConfirmed }: SignaturePadProps) {
+  const svgRef = useRef<Svg>(null);
+  const size = useRef({ width: 0, height: 0 });
   const [paths, setPaths] = useState<string[]>([]);
   const [currentPath, setCurrentPath] = useState<string>('');
-  const [confirmed, setConfirmed] = useState<boolean>(
-    Boolean(propConfirmed || signed)
-  );
+  const [saving, setSaving] = useState(false);
 
-  const isLocked = confirmed || Boolean(propConfirmed || signed);
+  const isLocked = isConfirmed;
 
   // PanResponder to track touch/stylus movement and generate SVG path commands
   const panResponder = useMemo(
@@ -64,21 +60,29 @@ export function SignaturePad({
     [isLocked]
   );
 
+  const handleLayout = (event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    size.current = { width, height };
+  };
+
   const handleClear = () => {
     setPaths([]);
     setCurrentPath('');
-    setConfirmed(false);
-    onChange?.(false);
-    onConfirm('');
+    onConfirm(null);
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     const allPaths = [...paths, ...(currentPath ? [currentPath] : [])];
     if (allPaths.length === 0) return;
-    const combinedSvg = allPaths.join(' ');
-    setConfirmed(true);
-    onChange?.(true);
-    onConfirm(combinedSvg);
+    setSaving(true);
+    try {
+      const png = await signatureToPng({ svg: svgRef.current, path: allPaths.join(' '), ...size.current });
+      onConfirm(png);
+    } catch (err) {
+      Alert.alert('Signature not saved', err instanceof Error ? err.message : 'Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const hasStrokes = paths.length > 0 || Boolean(currentPath);
@@ -105,12 +109,12 @@ export function SignaturePad({
       {/* Touch Signature Area */}
       <View
         {...panResponder.panHandlers}
+        onLayout={handleLayout}
         style={[
           styles.canvasArea,
           isLocked && styles.canvasAreaConfirmed,
         ]}>
-        {/* Render smooth SVG paths */}
-        <Svg style={StyleSheet.absoluteFill}>
+        <Svg ref={svgRef} style={StyleSheet.absoluteFill}>
           {paths.map((p, index) => (
             <Path
               key={index}
@@ -134,7 +138,6 @@ export function SignaturePad({
           ) : null}
         </Svg>
 
-        {/* Placeholder guidance when empty */}
         {!hasStrokes && !isLocked && (
           <View style={styles.placeholderContainer} pointerEvents="none">
             <Icon name="signature" size={32} color="#9CA3AF" />
@@ -142,18 +145,16 @@ export function SignaturePad({
           </View>
         )}
 
-        {/* Lock indicator overlay when confirmed */}
         {isLocked && (
           <View style={styles.lockOverlay} pointerEvents="none">
             <View style={styles.lockPill}>
               <Icon name="lock" size={13} color="#15803D" />
-              <Text style={styles.lockPillText}>Signature locked & timestamped</Text>
+              <Text style={styles.lockPillText}>Signature locked</Text>
             </View>
           </View>
         )}
       </View>
 
-      {/* Action Buttons */}
       <View style={styles.actionRow}>
         <Pressable
           onPress={handleClear}
@@ -168,12 +169,12 @@ export function SignaturePad({
 
         <Pressable
           onPress={handleConfirm}
-          disabled={!hasStrokes || isLocked}
+          disabled={!hasStrokes || isLocked || saving}
           accessibilityRole="button"
           accessibilityLabel="Confirm signature"
           style={({ pressed }) => [
             styles.confirmButton,
-            (!hasStrokes || isLocked) && styles.confirmButtonDisabled,
+            (!hasStrokes || isLocked || saving) && styles.confirmButtonDisabled,
             pressed && hasStrokes && !isLocked && { opacity: 0.9, transform: [{ scale: 0.985 }] },
           ]}>
           {isLocked ? (
@@ -184,7 +185,7 @@ export function SignaturePad({
               </Text>
             </>
           ) : (
-            <Text style={styles.confirmButtonText}>Confirm Signature</Text>
+            <Text style={styles.confirmButtonText}>{saving ? 'Saving…' : 'Confirm Signature'}</Text>
           )}
         </Pressable>
       </View>
