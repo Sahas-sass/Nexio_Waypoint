@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/waypoint/icon';
 import { Button, Eyebrow, PageTitle, StatusDot, WText } from '@/components/waypoint/ui';
 import { Colors, font, Radius, Shadow, W } from '@/utils/theme';
-import { supabase } from '@/lib/supabaseClient';
+import { isSupabaseConfigured, supabase } from '@/lib/supabaseClient';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
@@ -111,6 +111,12 @@ export default function LoginScreen() {
 
     if (!driverId || !pin) {
       Alert.alert('Error', 'Please enter your Driver ID or Mobile Number, and your PIN.');
+      return;
+    }
+
+    if (!isSupabaseConfigured) {
+      console.log('[Login] Supabase not configured, signing in locally with offline store');
+      router.replace('/route');
       return;
     }
 
