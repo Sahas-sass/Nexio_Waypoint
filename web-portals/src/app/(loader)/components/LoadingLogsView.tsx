@@ -3,25 +3,27 @@
 import { useState } from "react";
 import { Truck, CheckCircle2, ShieldCheck, Search, ArrowLeft, Eye, History } from "lucide-react";
 import { PastLogEntry } from "../types";
-import { filterLogs, calculateTotalAuditedPallets } from "../utils/logFilters";
+import { filterLogs, summarizeLogs, LogsPeriodFilter } from "../utils/logFilters";
 
 interface LoadingLogsViewProps {
   logs: PastLogEntry[];
+  isLoading: boolean;
   onBackToQueue: () => void;
   onSelectLogForAudit: (log: PastLogEntry) => void;
 }
 
 export default function LoadingLogsView({
   logs,
+  isLoading,
   onBackToQueue,
   onSelectLogForAudit,
 }: LoadingLogsViewProps) {
-  const [logsFilter, setLogsFilter] = useState<"all" | "today" | "past">("all");
+  const [logsFilter, setLogsFilter] = useState<LogsPeriodFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
   // Pure filtering and aggregation utilities
   const filteredLogs = filterLogs(logs, logsFilter, searchQuery);
-  const totalPalletsAudited = calculateTotalAuditedPallets(logs);
+  const summary = summarizeLogs(logs);
 
   return (
     <div className="space-y-6 font-sans">
@@ -59,8 +61,10 @@ export default function LoadingLogsView({
             <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
               Dispatched Vehicles
             </p>
-            <p className="text-sm font-extrabold text-waypoint-text">{logs.length} Trips Total</p>
-            <p className="text-[10px] text-emerald-600 font-semibold">100% Sequence Validated</p>
+            <p className="text-sm font-extrabold text-waypoint-text">{summary.tripCount} Trips Total</p>
+            <p className="text-[10px] text-emerald-600 font-semibold">
+              {summary.fullyVerifiedTrips} fully verified
+            </p>
           </div>
         </div>
 
@@ -73,9 +77,11 @@ export default function LoadingLogsView({
               Audited Pallets
             </p>
             <p className="text-sm font-extrabold text-waypoint-text">
-              {totalPalletsAudited.toLocaleString()} Pallets
+              {summary.verifiedPallets.toLocaleString()} Pallets
             </p>
-            <p className="text-[10px] text-emerald-600 font-semibold">Barcode Verified</p>
+            <p className="text-[10px] text-emerald-600 font-semibold">
+              of {summary.totalPallets.toLocaleString()} loaded
+            </p>
           </div>
         </div>
 
@@ -87,8 +93,10 @@ export default function LoadingLogsView({
             <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
               Security Seals
             </p>
-            <p className="text-sm font-extrabold text-waypoint-text">100% Logged</p>
-            <p className="text-[10px] text-blue-600 font-semibold">Tamper Protected</p>
+            <p className="text-sm font-extrabold text-waypoint-text">{summary.tripCount} Logged</p>
+            <p className="text-[10px] text-blue-600 font-semibold">
+              {summary.discrepancyCount} with exceptions
+            </p>
           </div>
         </div>
       </div>
@@ -186,7 +194,7 @@ export default function LoadingLogsView({
                   Driver
                 </span>
                 <span className="font-bold text-gray-800 mt-0.5 block">{log.driverName}</span>
-                <span className="text-[10px] text-gray-500">{log.driverPhone}</span>
+                {log.driverPhone && <span className="text-[10px] text-gray-500">{log.driverPhone}</span>}
               </div>
               <div>
                 <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">
@@ -196,15 +204,17 @@ export default function LoadingLogsView({
                   <ShieldCheck className="w-3.5 h-3.5" />
                   {log.sealNumber}
                 </span>
-                <span className="text-[10px] text-emerald-600 block font-semibold">
-                  Locked & Verified
-                </span>
+
               </div>
               <div>
                 <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">
                   Pallets & Weight
                 </span>
-                <span className="font-bold text-emerald-700 mt-0.5 block">
+                <span
+                  className={`font-bold mt-0.5 block ${
+                    log.verifiedPallets >= log.totalPallets ? "text-emerald-700" : "text-amber-700"
+                  }`}
+                >
                   {log.verifiedPallets}/{log.totalPallets} Verified
                 </span>
                 <span className="text-[10px] text-gray-500">
@@ -242,11 +252,23 @@ export default function LoadingLogsView({
           </div>
         ))}
 
-        {filteredLogs.length === 0 && (
+        {isLoading && logs.length === 0 && (
+          <div className="p-12 text-center bg-white rounded-3xl border border-gray-200 shadow-xs text-xs font-bold text-gray-500">
+            Loading dispatch logs...
+          </div>
+        )}
+
+        {!isLoading && filteredLogs.length === 0 && (
           <div className="p-12 text-center bg-white rounded-3xl border border-gray-200 shadow-xs">
             <History className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-            <h3 className="text-sm font-bold text-gray-800">No logs found</h3>
-            <p className="text-xs text-gray-400 mt-1">Try adjusting your search query or filter</p>
+            <h3 className="text-sm font-bold text-gray-800">
+              {logs.length === 0 ? "No dispatches recorded yet" : "No logs found"}
+            </h3>
+            <p className="text-xs text-gray-400 mt-1">
+              {logs.length === 0
+                ? "Sealed and dispatched trips will appear here"
+                : "Try adjusting your search query or filter"}
+            </p>
           </div>
         )}
       </div>

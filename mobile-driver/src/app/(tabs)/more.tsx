@@ -1,74 +1,71 @@
-import { Image } from 'expo-image';
+import Constants from 'expo-constants';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import {
-  Alert,
-  Linking,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { useState } from 'react';
+import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '@/components/waypoint/chrome';
 import { Icon, type IconName } from '@/components/waypoint/icon';
-import { Card, Label, SectionHeading, TitleRow } from '@/components/waypoint/ui';
-import { truckPhoto } from '@/data/mock';
-import { useQueueStore } from '@/store/queueStore';
+import { Button, Card, Label, SectionHeading, TitleRow } from '@/components/waypoint/ui';
+import { signOut } from '@/features/auth/services/session';
+import { useSyncStore } from '@/features/sync/store/syncStore';
+import { TripStateView } from '@/features/trip/components/TripStateView';
+import { useTrip } from '@/features/trip/hooks/useTrip';
+import { formatKg, initials } from '@/utils/formatters';
 import { Colors, font, Radius, Shadow, W } from '@/utils/theme';
 
+const TRIP_STATUS_LABELS: Record<string, string> = {
+  planning: 'Planning',
+  loading: 'Loading',
+  en_route: 'En route',
+  completed: 'Completed',
+};
+
 export default function MoreScreen() {
-  const driverName = useQueueStore((state) => state.driverName) || 'Kasun Perera';
-  const currentVehicle =
-    useQueueStore((state) => state.currentVehicle) || 'TRK-024';
-  const isOnline = useQueueStore((state) => state.isOnline);
-  const pendingCount = useQueueStore((state) => state.pendingCount);
+  const { status, error, driver, trip, progress } = useTrip();
+  const isOnline = useSyncStore((state) => state.isOnline);
+  const pendingCount = useSyncStore((state) => state.pendingCount);
+  const [signingOut, setSigningOut] = useState(false);
 
-  // Compute initials
-  const initials = driverName
-    .split(' ')
-    .map((n) => n[0])
-    .join('')
-    .toUpperCase();
+  const vehicle = trip?.vehicle ?? null;
+  const nextContact = trip?.stops.find((s) => s.managerPhone && (s.status === 'PENDING' || s.status === 'IN_PROGRESS'));
+  const appVersion = Constants.expoConfig?.version;
 
-  const handleCallDispatch = () => {
-    Linking.openURL('tel:+94112345678').catch((err) => {
-      console.warn('Unable to dial dispatch:', err);
-      Alert.alert(
-        'Call Dispatch',
-        'Direct dispatch helpline: +94 11 234 5678\n(Operating 24/7 for Colombo Regional Fleet)'
-      );
-    });
-  };
-
-  const handleOpenInfo = (title: string, message: string) => {
-    Alert.alert(title, message);
+  const doSignOut = async () => {
+    setSigningOut(true);
+    try {
+      await signOut();
+      router.replace('/login');
+    } finally {
+      setSigningOut(false);
+    }
   };
 
   const handleSignOut = () => {
+    if (pendingCount === 0) {
+      void doSignOut();
+      return;
+    }
     Alert.alert(
-      'End Shift & Sign Out',
-      'Are you sure you want to end your current shift and return to the login screen?',
+      'Unsynced deliveries',
+      `${pendingCount} record${pendingCount === 1 ? ' has' : 's have'} not synced yet and will be lost if you sign out. Connect to the internet and sync first if possible.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: () => {
-            router.replace('/(auth)/login');
-          },
-        },
+        { text: 'Sign out anyway', style: 'destructive', onPress: () => void doSignOut() },
       ]
     );
   };
 
+  const handleCall = (phone: string) => {
+    Linking.openURL(`tel:${phone.replace(/\s+/g, '')}`).catch(() => Alert.alert('Call', `Unable to start a call to ${phone}.`));
+  };
+
   return (
     <Screen>
-      {/* Screen Title Row */}
       <TitleRow
         eyebrow="DRIVER HUB"
         title="More"
-        subtitle="Your shift, vehicle and settings"
+        subtitle="Your profile, vehicle and sync status"
         aside={
           <View style={styles.settingsIconBox}>
             <Icon name="more" size={22} color={Colors.textSecondary} />
@@ -76,98 +73,105 @@ export default function MoreScreen() {
         }
       />
 
-      {/* 1. Top Profile Card */}
-      <LinearGradient
-        colors={[Colors.primaryYellow, Colors.brightYellow]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.profileCard}>
-        {/* Subtle decorative circles */}
-        <View style={styles.patternLarge} />
-        <View style={styles.patternSmall} />
+      {!driver ? (
+        <TripStateView
+          kind={status === 'error' ? 'error' : 'loading'}
+          title={status === 'error' ? 'Could not load your profile' : 'Loading your profile…'}
+          message={status === 'error' ? error : undefined}
+        />
+      ) : (
+        <LinearGradient
+          colors={[Colors.primaryYellow, Colors.brightYellow]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.profileCard}>
+          <View style={styles.patternLarge} />
+          <View style={styles.patternSmall} />
 
-        <View style={styles.profileTopRow}>
-          {/* Avatar with initials "KP" */}
-          <View style={styles.avatarBox}>
-            <Text style={styles.avatarInitials}>{initials}</Text>
-            <View style={styles.avatarOnlineDot} />
-          </View>
-
-          {/* Driver identity */}
-          <View style={{ flex: 1 }}>
-            <View style={styles.driverTagPill}>
-              <Text style={styles.driverTagText}>DRIVER D-1084</Text>
+          <View style={styles.profileTopRow}>
+            <View style={styles.avatarBox}>
+              <Text style={styles.avatarInitials}>{initials(driver.fullName)}</Text>
+              <View style={[styles.avatarOnlineDot, !isOnline && { backgroundColor: Colors.warningOrange }]} />
             </View>
-            <Text style={styles.driverNameText}>{driverName}</Text>
-            <Text style={styles.fleetLabelText}>Colombo Regional Fleet</Text>
+
+            <View style={{ flex: 1 }}>
+              <View style={styles.driverTagPill}>
+                <Text style={styles.driverTagText}>
+                  {driver.employeeId ? `DRIVER ${driver.employeeId}` : 'DRIVER'}
+                </Text>
+              </View>
+              <Text style={styles.driverNameText}>{driver.fullName ?? 'Driver'}</Text>
+              {driver.station ? <Text style={styles.fleetLabelText}>{driver.station}</Text> : null}
+            </View>
+
+            {trip ? (
+              <View style={styles.shiftStatusChip}>
+                <View style={styles.shiftStatusDot} />
+                <Text style={styles.shiftStatusText}>{TRIP_STATUS_LABELS[trip.status] ?? trip.status}</Text>
+              </View>
+            ) : null}
           </View>
 
-          {/* Shift status chip */}
-          <View style={styles.shiftStatusChip}>
-            <View style={styles.shiftStatusDot} />
-            <Text style={styles.shiftStatusText}>On shift</Text>
+          <View style={styles.metricsRow}>
+            <View style={styles.metricItem}>
+              <Text style={styles.metricItemLabel}>STOPS</Text>
+              <Text style={styles.metricItemValue}>
+                {progress.closed}/{progress.total}
+              </Text>
+            </View>
+            <View style={styles.metricDivider} />
+            <View style={styles.metricItem}>
+              <Text style={styles.metricItemLabel}>ITEMS</Text>
+              <Text style={styles.metricItemValue}>{progress.totalItems}</Text>
+            </View>
+            <View style={styles.metricDivider} />
+            <View style={styles.metricItem}>
+              <Text style={styles.metricItemLabel}>LOAD</Text>
+              <Text style={styles.metricItemValue}>{formatKg(progress.totalWeightKg)}</Text>
+            </View>
           </View>
-        </View>
+        </LinearGradient>
+      )}
 
-        {/* Shift metrics row: Today, On-Time, Driving */}
-        <View style={styles.metricsRow}>
-          <View style={styles.metricItem}>
-            <Text style={styles.metricItemLabel}>TODAY</Text>
-            <Text style={styles.metricItemValue}>
-              2 <Text style={styles.metricItemUnit}>/ 6 stops</Text>
+      {driver && (driver.phone || driver.shift) ? (
+        <Card style={styles.vehicleCard}>
+          <View style={styles.vehicleThumbnailBox}>
+            <Icon name="user" size={24} color="#8A5900" />
+          </View>
+          <View style={{ flex: 1, minWidth: 0, paddingLeft: 2 }}>
+            <Label size={7.5} spacing={0.08}>
+              YOUR DETAILS
+            </Label>
+            {driver.phone ? <Text style={styles.vehicleIdText}>{driver.phone}</Text> : null}
+            {driver.shift ? <Text style={styles.vehicleDetailText}>{driver.shift}</Text> : null}
+          </View>
+        </Card>
+      ) : null}
+
+      {vehicle && trip ? (
+        <Card style={styles.vehicleCard}>
+          <View style={styles.vehicleThumbnailBox}>
+            <Icon name="route" size={24} color="#8A5900" />
+          </View>
+          <View style={{ flex: 1, minWidth: 0, paddingLeft: 2 }}>
+            <Label size={7.5} spacing={0.08}>
+              YOUR VEHICLE • {trip.tripNumber}
+            </Label>
+            <Text style={styles.vehicleIdText}>{vehicle.registrationNumber}</Text>
+            <Text style={styles.vehicleDetailText}>
+              {[vehicle.vehicleType, vehicle.isRefrigerated ? 'Refrigerated' : 'Ambient', trip.bay]
+                .filter(Boolean)
+                .join(' • ')}
             </Text>
           </View>
-
-          <View style={styles.metricDivider} />
-
-          <View style={styles.metricItem}>
-            <Text style={styles.metricItemLabel}>ON-TIME</Text>
-            <Text style={styles.metricItemValue}>96%</Text>
+          <View style={styles.vehicleCheckBadge}>
+            <Icon name={vehicle.isRefrigerated ? 'snow' : 'box'} size={15} color={W.greenDark} />
           </View>
+        </Card>
+      ) : null}
 
-          <View style={styles.metricDivider} />
-
-          <View style={styles.metricItem}>
-            <Text style={styles.metricItemLabel}>DRIVING</Text>
-            <Text style={styles.metricItemValue}>2h 18m</Text>
-          </View>
-        </View>
-      </LinearGradient>
-
-      {/* 2. Assigned Vehicle Card */}
-      <Card style={styles.vehicleCard}>
-        <View style={styles.vehicleThumbnailBox}>
-          <Image
-            source={{ uri: truckPhoto }}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-            accessibilityLabel={`Assigned vehicle ${currentVehicle}`}
-          />
-          <View style={styles.assignedBadge}>
-            <Icon name="route" size={10} color={Colors.textPrimary} />
-            <Text style={styles.assignedBadgeText}>Assigned</Text>
-          </View>
-        </View>
-
-        <View style={{ flex: 1, minWidth: 0, paddingLeft: 2 }}>
-          <Label size={7.5} spacing={0.08}>
-            YOUR VEHICLE
-          </Label>
-          <Text style={styles.vehicleIdText}>{currentVehicle}</Text>
-          <Text style={styles.vehicleDetailText}>
-            Heavy Freight Truck • 78% fuel
-          </Text>
-        </View>
-
-        <View style={styles.vehicleCheckBadge}>
-          <Icon name="check" size={15} color={W.greenDark} />
-        </View>
-      </Card>
-
-      {/* 3. Quick Access Menu */}
-      <SectionHeading title="Quick access & tools" />
+      <SectionHeading title="Sync & account" />
       <View style={styles.quickGrid}>
-        {/* Offline & Sync Status tile */}
         <Pressable
           onPress={() => router.push('/offline')}
           accessibilityRole="button"
@@ -186,150 +190,41 @@ export default function MoreScreen() {
                 <View
                   style={[
                     styles.syncStatusDot,
-                    {
-                      backgroundColor: isOnline
-                        ? Colors.successGreen
-                        : Colors.warningOrange,
-                    },
+                    { backgroundColor: isOnline ? Colors.successGreen : Colors.warningOrange },
                   ]}
                 />
-                <Text
-                  style={[
-                    styles.syncStatusText,
-                    { color: isOnline ? W.greenDark : Colors.offlineText },
-                  ]}>
+                <Text style={[styles.syncStatusText, { color: isOnline ? W.greenDark : Colors.offlineText }]}>
                   {isOnline ? 'Online' : 'Offline'}
                 </Text>
               </View>
             </View>
-
             <Text style={styles.quickTitleText}>Offline & Sync Status</Text>
             <Text style={styles.quickSubtitleText}>
-              {pendingCount === 0
-                ? 'All records synced'
-                : `${pendingCount} records queued`}
+              {pendingCount === 0 ? 'All records synced' : `${pendingCount} records queued`}
             </Text>
           </LinearGradient>
         </Pressable>
 
-        {/* Report Issue */}
-        <QuickActionCell
-          icon="alert"
-          title="Report Issue / Route Support"
-          subtitle="Vehicle or delivery flags"
-          onPress={() =>
-            handleOpenInfo(
-              'Report Issue',
-              'Report active route discrepancies or vehicle issues directly to dispatcher.'
-            )
-          }
-        />
-
-        {/* Documents & Permits */}
-        <QuickActionCell
-          icon="history"
-          title="Documents & Permits"
-          subtitle="Waybills & cargo manifests"
-          onPress={() =>
-            handleOpenInfo(
-              'Documents & Permits',
-              'Access digital cargo waybills, vehicle road permits, and transport licenses.'
-            )
-          }
-        />
-
-        {/* Vehicle Checks & Inspection */}
-        <QuickActionCell
-          icon="box"
-          title="Vehicle Checks & Inspection"
-          subtitle="Pre-trip walkaround complete"
-          badge="Verified"
-          onPress={() =>
-            handleOpenInfo(
-              'Vehicle Inspection',
-              'Daily 14-point safety walkaround verified for TRK-024.'
-            )
-          }
-        />
-
-        {/* Shift Activity Logs */}
-        <QuickActionCell
-          icon="clock"
-          title="Shift Activity Logs"
-          subtitle="Driving & rest compliance"
-          onPress={() =>
-            handleOpenInfo(
-              'Shift Activity',
-              'Driving time: 2h 18m. On shift: 6h 24m. Rest period due in 1h 42m.'
-            )
-          }
-        />
-
-        {/* Safety Centre */}
-        <QuickActionCell
-          icon="shield"
-          title="Safety Centre"
-          subtitle="Procedures & emergency protocols"
-          onPress={() =>
-            handleOpenInfo(
-              'Safety Centre',
-              'Access cold-chain breakdown SOPs, collision procedures, and emergency response guides.'
-            )
-          }
-        />
+        {nextContact?.managerPhone ? (
+          <QuickActionCell
+            icon="phone"
+            title="Call next store"
+            subtitle={[nextContact.storeName, nextContact.managerName].filter(Boolean).join(' • ')}
+            onPress={() => handleCall(nextContact.managerPhone!)}
+          />
+        ) : null}
       </View>
 
-      {/* 4. Emergency Support Card */}
-      <LinearGradient
-        colors={['#1F2937', '#111827']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.emergencyCard}>
-        <View style={styles.emergencyIconBox}>
-          <Icon name="navigation" size={20} color={Colors.textPrimary} />
+      <Button variant="secondary" icon="lock" onPress={handleSignOut} disabled={signingOut}>
+        {signingOut ? 'Signing out…' : 'Sign out'}
+      </Button>
+
+      {appVersion ? (
+        <View style={styles.versionRow}>
+          <Icon name="shield" size={13} color={Colors.textSecondary} />
+          <Text style={styles.versionText}>Waypoint Driver v{appVersion}</Text>
         </View>
-
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={styles.emergencyTagText}>NEED ASSISTANCE?</Text>
-          <Text style={styles.emergencyTitleText}>Dispatch Control</Text>
-          <Text style={styles.emergencySubtitleText}>
-            {currentVehicle} • Shift A • Response &lt; 2 mins
-          </Text>
-        </View>
-
-        <Pressable
-          onPress={handleCallDispatch}
-          accessibilityRole="button"
-          accessibilityLabel="Call Dispatch"
-          style={({ pressed }) => [
-            styles.callDispatchButton,
-            pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
-          ]}>
-          <Icon name="phone" size={14} color={Colors.textPrimary} />
-          <Text style={styles.callDispatchText}>Call</Text>
-        </Pressable>
-      </LinearGradient>
-
-      {/* 5. End Shift & Sign Out */}
-      <Pressable
-        onPress={handleSignOut}
-        accessibilityRole="button"
-        accessibilityLabel="End Shift and Sign Out"
-        style={({ pressed }) => [
-          styles.signOutButton,
-          pressed && styles.signOutButtonPressed,
-        ]}>
-        <Icon name="logout" size={17} color="#DC2626" />
-        <Text style={styles.signOutButtonText}>End Shift &amp; Sign Out</Text>
-      </Pressable>
-
-      {/* Version Tag */}
-      <View style={styles.versionRow}>
-        <Icon name="shield" size={13} color={Colors.textSecondary} />
-        <Text style={styles.versionText}>
-          Waypoint Driver v2.8.4 • Fleet Security Certified
-        </Text>
-      </View>
+      ) : null}
     </Screen>
   );
 }
@@ -338,34 +233,21 @@ function QuickActionCell({
   icon,
   title,
   subtitle,
-  badge,
   onPress,
 }: {
   icon: IconName;
   title: string;
   subtitle: string;
-  badge?: string;
   onPress: () => void;
 }) {
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={title}
-      style={styles.quickGridCell}>
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={title} style={styles.quickGridCell}>
       <Card style={styles.quickCardBox}>
         <View style={styles.quickCardTop}>
           <View style={styles.tileIconBox}>
             <Icon name={icon} size={18} color="#8A5900" />
           </View>
-          {badge && (
-            <View style={styles.badgePill}>
-              <Icon name="check" size={10} color={W.greenDark} />
-              <Text style={styles.badgePillText}>{badge}</Text>
-            </View>
-          )}
         </View>
-
         <Text style={styles.quickTitleText} numberOfLines={2}>
           {title}
         </Text>
@@ -523,11 +405,6 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     marginTop: 3,
   },
-  metricItemUnit: {
-    ...font(700),
-    fontSize: 9,
-    color: '#795500',
-  },
   metricDivider: {
     width: 1,
     height: '75%',
@@ -552,7 +429,9 @@ const styles = StyleSheet.create({
     height: 58,
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#FFF8DC',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   assignedBadge: {
     position: 'absolute',
@@ -646,20 +525,6 @@ const styles = StyleSheet.create({
     ...font(800),
     fontSize: 8.5,
   },
-  badgePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: W.greenSoft,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 999,
-  },
-  badgePillText: {
-    ...font(800),
-    fontSize: 8.5,
-    color: W.greenDark,
-  },
   quickTitleText: {
     ...font(800),
     fontSize: 12,
@@ -672,80 +537,6 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 2,
     lineHeight: 13,
-  },
-  emergencyCard: {
-    minHeight: 76,
-    borderRadius: Radius.md,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    boxShadow: Shadow.md,
-    marginBottom: 16,
-  },
-  emergencyIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 13,
-    backgroundColor: Colors.primaryYellow,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emergencyTagText: {
-    ...font(800),
-    fontSize: 8,
-    color: Colors.primaryYellow,
-    letterSpacing: 0.9,
-  },
-  emergencyTitleText: {
-    ...font(800),
-    fontSize: 13,
-    color: Colors.surfaceWhite,
-    marginTop: 1,
-  },
-  emergencySubtitleText: {
-    ...font(500),
-    fontSize: 9.5,
-    color: '#9CA3AF',
-    marginTop: 2,
-  },
-  callDispatchButton: {
-    minHeight: 38,
-    paddingHorizontal: 14,
-    borderRadius: Radius.sm,
-    backgroundColor: Colors.primaryYellow,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    boxShadow: Shadow.sm,
-  },
-  callDispatchText: {
-    ...font(800),
-    fontSize: 12,
-    color: Colors.textPrimary,
-  },
-  signOutButton: {
-    minHeight: 48,
-    borderRadius: Radius.md,
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1.5,
-    borderColor: '#FEE2E2',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 18,
-    marginBottom: 6,
-  },
-  signOutButtonPressed: {
-    backgroundColor: '#FEE2E2',
-    transform: [{ scale: 0.99 }],
-  },
-  signOutButtonText: {
-    ...font(800),
-    fontSize: 13,
-    color: '#DC2626',
-    letterSpacing: -0.2,
   },
   versionRow: {
     flexDirection: 'row',

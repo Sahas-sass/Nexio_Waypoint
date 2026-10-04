@@ -24,6 +24,8 @@ for (const p of envPaths) {
   }
 }
 
+const { getPgConfig } = require("./lib/pgConfig");
+
 let Client;
 try {
   Client = require("pg").Client;
@@ -64,18 +66,7 @@ async function main() {
     return;
   }
 
-  const config = dbUrl ? {
-    connectionString: dbUrl,
-    ssl: { rejectUnauthorized: false }
-  } : {
-    host: process.env.DB_HOST || "aws-0-ap-northeast-1.pooler.supabase.com",
-    port: parseInt(process.env.DB_PORT || "5432", 10),
-    user: process.env.DB_USER || "postgres.cqkmmmrrhuwitlvwoebq",
-    password: dbPassword,
-    database: process.env.DB_NAME || "postgres",
-    ssl: { rejectUnauthorized: false },
-    connectionTimeoutMillis: 7000
-  };
+  const config = getPgConfig();
 
   const pgClient = new Client(config);
   await pgClient.connect();

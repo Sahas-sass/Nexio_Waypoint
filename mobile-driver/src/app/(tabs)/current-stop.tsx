@@ -1,6 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
 import {
   Linking,
   Platform,
@@ -9,27 +8,6 @@ import {
   Text,
   View,
 } from 'react-native';
-import * as Location from 'expo-location';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Defs, Path, Pattern, Rect } from 'react-native-svg';
-
-// react-native-maps is native-only; lazy-require to avoid web crash or missing native module
-let MapView: any = View;
-let Marker: any = View;
-let Polyline: any = View;
-let isMapsAvailable = false;
-
-if (Platform.OS !== 'web') {
-  try {
-    const Maps = require('react-native-maps');
-    MapView = Maps.default || Maps;
-    Marker = Maps.Marker;
-    Polyline = Maps.Polyline;
-    isMapsAvailable = Boolean(MapView && MapView !== View);
-  } catch (err) {
-    console.warn('[CurrentStop] react-native-maps could not be loaded:', err);
-  }
-}
 
 import { Screen } from '@/components/waypoint/chrome';
 import { Icon, type IconName } from '@/components/waypoint/icon';
@@ -40,392 +18,230 @@ import {
   SectionHeading,
   TitleRow,
 } from '@/components/waypoint/ui';
-import { db, initDatabase, type StopRecord, type StoreManagerRecord } from '@/database/schema';
-import { enqueueSyncItem } from '@/database/syncManager';
-import { useLocationStore } from '@/store/locationStore';
-import { useQueueStore } from '@/store/queueStore';
+import { useLocationStore } from '@/features/location/locationStore';
+import { StopEmptyState } from '@/features/pod/components/StopEmptyState';
+import { StopMap } from '@/features/pod/components/StopMap';
+import { findStop } from '@/features/pod/utils/findStop';
+import { navigationUrl, phoneUrl, webMapsUrl } from '@/features/pod/utils/stopLinks';
+import { useTrip } from '@/features/trip/hooks/useTrip';
+import { startCurrentStop } from '@/features/trip/services/tripController';
+import { stopStatusLabel } from '@/features/trip/utils/stopProgress';
+import { distanceLabel } from '@/utils/haversine';
+import { initials, padStop } from '@/utils/formatters';
 import { Colors, font, Radius, Shadow, W } from '@/utils/theme';
 
-const mapStyleDark = [
-  { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
-  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
-  { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
-  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#263c3f" }] },
-  { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#6b9a76" }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#38414e" }] },
-  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#212a37" }] },
-  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#9ca5b3" }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#746855" }] },
-  { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#1f2835" }] },
-  { featureType: "road.highway", elementType: "labels.text.fill", stylers: [{ color: "#f3d19c" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#17263c" }] },
-  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#515c6d" }] },
-  { featureType: "water", elementType: "labels.text.stroke", stylers: [{ color: "#17263c" }] }
-];
 
 export default function CurrentStopScreen() {
-  const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ stop?: string; stopId?: string }>();
-
-  const [stop, setStop] = useState<StopRecord | null>(null);
-  const [manager, setManager] = useState<StoreManagerRecord | null>(null);
-  const [totalStopsCount, setTotalStopsCount] = useState<number>(6);
-  const [distanceKm, setDistanceKm] = useState<string>('...');
-
-  // Reactively use the global GPS location
+  const params = useLocalSearchParams<{ stopId?: string }>();
+  const { stops, activeStop, trip, status, error } = useTrip();
   const liveCoords = useLocationStore((state) => state.coords);
 
-  // Subscribe to dataVersion so we re-read SQLite when Supabase sync completes
-  const dataVersion = useQueueStore((state) => state.dataVersion);
+  const stop = findStop(stops, params.stopId, activeStop);
 
-  // Load stop dynamically from SQLite based on query parameter or active/pending status
-  const loadStopData = useCallback(() => {
-    try {
-      const requestedId = params.stopId ?? params.stop;
-
-      let foundStop: StopRecord | null = null;
-
-      if (requestedId) {
-        foundStop = db.getFirstSync<StopRecord>(
-          'SELECT * FROM stops WHERE id = ? OR stop_number = ? LIMIT 1;',
-          [requestedId, Number(requestedId) || 0]
-        );
-      }
-
-      // If no explicit param or not found, locate the first in_progress or pending stop
-      if (!foundStop) {
-        foundStop = db.getFirstSync<StopRecord>(
-          "SELECT * FROM stops WHERE status = 'IN_PROGRESS' ORDER BY stop_number ASC LIMIT 1;"
-        );
-      }
-
-      if (!foundStop) {
-        foundStop = db.getFirstSync<StopRecord>(
-          "SELECT * FROM stops WHERE status = 'PENDING' ORDER BY stop_number ASC LIMIT 1;"
-        );
-      }
-
-      if (!foundStop) {
-        // Fallback: seed if table is empty
-        initDatabase();
-        foundStop = db.getFirstSync<StopRecord>(
-          'SELECT * FROM stops ORDER BY stop_number ASC LIMIT 1;'
-        );
-      }
-
-      setStop(foundStop);
-
-      if (foundStop?.manager_id) {
-        console.log(`[CurrentStop] Looking up manager_id: "${foundStop.manager_id}"`);
-        const mgr = db.getFirstSync<StoreManagerRecord>(
-          'SELECT * FROM store_managers WHERE id = ?;',
-          [foundStop.manager_id]
-        );
-        console.log(`[CurrentStop] Found manager: ${mgr ? mgr.name : 'NULL'}`);
-        setManager(mgr);
-      } else {
-        console.log('[CurrentStop] No manager_id on this stop, setting manager to null');
-        setManager(null);
-      }
-
-      const countRow = db.getFirstSync<{ count: number }>(
-        'SELECT COUNT(*) as count FROM stops;'
+  if (!stop) {
+    if (status === 'loading' || status === 'idle') {
+      return (
+        <Screen>
+          <StopEmptyState icon="clock" title="Loading your stop" message="Fetching today's trip…" showRouteLink={false} />
+        </Screen>
       );
-      if (countRow) {
-        setTotalStopsCount(Math.max(countRow.count, 6));
-      }
-    } catch (err) {
-      console.error('[CurrentStop] Failed to query stop from SQLite:', err);
     }
-  }, [params.stop, params.stopId, dataVersion]);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadStopData();
-    }, [loadStopData])
-  );
-
-  // Calculate distance reactively from the shared location store
-  useEffect(() => {
-    if (liveCoords && stop?.latitude && stop?.longitude) {
-      const R = 6371;
-      const dLat = (stop.latitude - liveCoords.latitude) * Math.PI / 180;
-      const dLon = (stop.longitude - liveCoords.longitude) * Math.PI / 180;
-      const lat1 = liveCoords.latitude * Math.PI / 180;
-      const lat2 = stop.latitude * Math.PI / 180;
-      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      setDistanceKm((R * c).toFixed(1));
+    if (status === 'error') {
+      return (
+        <Screen>
+          <StopEmptyState icon="alert" title="Trip unavailable" message={error ?? 'Could not load your trip.'} />
+        </Screen>
+      );
     }
-  }, [liveCoords, stop]);
+    return (
+      <Screen>
+        <StopEmptyState
+          icon="check"
+          title={trip ? 'All stops completed' : 'No active trip'}
+          message={
+            trip
+              ? 'Every stop on this trip has a proof of delivery.'
+              : 'Dispatch has not assigned you a loading or en-route trip yet.'
+          }
+        />
+      </Screen>
+    );
+  }
 
-  // Fallback defaults if SQLite row is loading
-  const stopNumberStr = stop ? String(stop.stop_number).padStart(2, '0') : '02';
-  const storeName = stop?.store_name ?? 'Fresh Store #22';
-  const locationCity = stop?.address ?? 'Nugegoda';
-  const deliveryWindow = stop?.window ?? '8:00 - 8:30 AM';
-  const isChilled = stop ? stop.is_chilled === 1 : true;
-  const itemsCount = stop?.items_count ?? 28;
-  const weightKg = stop?.weight_kg ?? 420;
-  const volumeM3 = stop?.volume_m3 ?? 2.4;
-  const accessNotes =
-    stop?.access_notes ??
-    'Rear Dock, Enter from Chapel Lane, Van Access Only, Bay 3 reserved';
+  const stopNumberStr = padStop(stop.sequence);
+  const isChilled = stop.temp === 'chilled';
+  const isClosed = stop.status === 'COMPLETED' || stop.status === 'FAILED';
+  const distance = distanceLabel(liveCoords, stop);
+  const navUrl = navigationUrl(stop, Platform.OS);
+  const telUrl = phoneUrl(stop.managerPhone);
 
-  // Address for navigation
-  const fullAddress = locationCity.includes('High Level')
-    ? locationCity
-    : `155 High Level Rd, ${locationCity}`;
-
-  // Launch native mapping navigation (works offline with device GPS coordinates)
   const handleOpenNavigation = () => {
-    const lat = stop?.latitude;
-    const lng = stop?.longitude;
-    const encodedDestination = encodeURIComponent(`${storeName}, ${fullAddress}`);
-
-    const navUrl = Platform.select({
-      ios: lat && lng ? `maps:?daddr=${lat},${lng}` : `maps:0,0?q=${encodedDestination}`,
-      android: lat && lng ? `google.navigation:q=${lat},${lng}` : `geo:0,0?q=${encodedDestination}`,
-      default: lat && lng
-        ? `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`
-        : `https://maps.google.com/?q=${encodedDestination}`,
-    });
-
+    if (!navUrl) return;
     Linking.openURL(navUrl).catch(() => {
-      Linking.openURL(`https://maps.google.com/?q=${encodedDestination}`);
+      const fallback = webMapsUrl(stop);
+      if (fallback) Linking.openURL(fallback).catch(() => undefined);
     });
   };
 
-  // Launch phone dialer for store manager
   const handleCallManager = () => {
-    const phoneNumber = manager?.phone ?? '+94771234567';
-    Linking.openURL(`tel:${phoneNumber}`).catch((err) => {
+    if (!telUrl) return;
+    Linking.openURL(telUrl).catch((err) => {
       console.warn('Cannot open phone dialer:', err);
     });
   };
 
-  // Start Delivery button action
-  const handleStartDelivery = () => {
-    if (stop) {
-      // Update local stop status to IN_PROGRESS in SQLite
-      try {
-        db.runSync("UPDATE stops SET status = 'IN_PROGRESS' WHERE id = ?;", [
-          stop.id,
-        ]);
-
-        // Enqueue the offline sync action for Supabase
-        enqueueSyncItem(stop.id, 'STATUS_UPDATE', { status: 'IN_PROGRESS' });
-      } catch (err) {
-        console.error('[CurrentStop] Failed to update stop to IN_PROGRESS:', err);
-      }
+  const handlePrimary = () => {
+    if (isClosed) {
+      router.navigate({ pathname: '/pod/complete', params: { stopId: stop.id } });
+      return;
     }
-
-    // Navigate to Proof of Delivery flow
-    router.navigate({
-      pathname: '/pod/[stopId]',
-      params: { stopId: stop?.id ?? stopNumberStr },
-    });
+    if (stop.status === 'PENDING') startCurrentStop(stop.id);
+    router.navigate({ pathname: '/pod/[stopId]', params: { stopId: stop.id } });
   };
+
+  const primaryLabel = isClosed
+    ? 'View Delivery Summary'
+    : stop.status === 'IN_PROGRESS'
+      ? 'Continue Proof of Delivery'
+      : 'Start Delivery';
 
   return (
     <Screen
       footer={
         <View style={styles.footerContainer}>
           <Pressable
-            onPress={handleStartDelivery}
+            onPress={handlePrimary}
             accessibilityRole="button"
-            accessibilityLabel="Start Delivery"
+            accessibilityLabel={primaryLabel}
             style={({ pressed }) => [
               styles.startDeliveryButton,
               pressed && styles.startDeliveryButtonPressed,
             ]}>
-            <Text style={styles.startDeliveryButtonText}>Start Delivery</Text>
+            <Text style={styles.startDeliveryButtonText}>{primaryLabel}</Text>
             <Icon name="chevron" size={18} color={Colors.textPrimary} />
           </Pressable>
           <SafetyNote>Only interact when safely parked.</SafetyNote>
         </View>
       }>
-      {/* 2. Top Stop Bar */}
       <TitleRow
         center
         eyebrow={`CURRENT DELIVERY · STOP ${stopNumberStr}`}
-        title={storeName}
-        subtitle={locationCity}
+        title={stop.storeName}
+        subtitle={stop.address ?? 'Address not set'}
         subtitleIcon="pin"
         aside={
           <View style={styles.stopCounterBadge}>
             <Text style={styles.stopCounterNumber}>{stopNumberStr}</Text>
-            <Text style={styles.stopCounterTotal}>OF {totalStopsCount}</Text>
+            <Text style={styles.stopCounterTotal}>OF {stops.length}</Text>
           </View>
         }
       />
 
-      {/* Prominent Delivery Window Status Box */}
       <LinearGradient
         colors={[Colors.primaryYellow, Colors.brightYellow]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.windowCard}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Label size={9} spacing={0.08} color={Colors.textPrimary}>
             DELIVERY WINDOW
           </Label>
-          <Text style={styles.windowTimeText}>{deliveryWindow}</Text>
+          <Text style={styles.windowTimeText}>{stop.window ?? 'Not specified'}</Text>
         </View>
 
         <View style={styles.onTimePill}>
           <View style={styles.onTimeDot} />
-          <Text style={styles.onTimeText}>On Time</Text>
+          <Text style={styles.onTimeText}>{stopStatusLabel(stop.status)}</Text>
         </View>
       </LinearGradient>
 
-      {/* 3. Map Snapshot & Direct Navigation */}
       <Card style={[styles.mapCard, { padding: 0 }]}>
         <View style={styles.mapContainer}>
-          {isMapsAvailable && stop?.latitude && stop?.longitude ? (
-            <MapView
-              style={StyleSheet.absoluteFill}
-              showsUserLocation={false}
-              showsMyLocationButton={false}
-              customMapStyle={mapStyleDark}
-              region={{
-                latitude: stop.latitude,
-                longitude: stop.longitude,
-                latitudeDelta: 0.04,
-                longitudeDelta: 0.04,
-              }}>
-              {liveCoords && (
-                <Marker
-                  coordinate={{
-                    latitude: liveCoords.latitude,
-                    longitude: liveCoords.longitude,
-                  }}
-                  title="You"
-                  description="Your current location">
-                  <View style={styles.driverMarker}>
-                    <View style={styles.driverMarkerInner}>
-                      <Icon name="navigation" size={14} color="#FFFFFF" />
-                    </View>
-                  </View>
-                </Marker>
-              )}
-              <Marker
-                coordinate={{ latitude: stop.latitude, longitude: stop.longitude }}
-                title={storeName}
-                pinColor={Colors.primaryYellow}
-              />
-              {liveCoords && (
-                <Polyline
-                  coordinates={[
-                    { latitude: liveCoords.latitude, longitude: liveCoords.longitude },
-                    { latitude: stop.latitude, longitude: stop.longitude },
-                  ]}
-                  strokeColor={Colors.primaryYellow}
-                  strokeWidth={3}
-                  lineDashPattern={[6, 4]}
-                />
-              )}
-            </MapView>
-          ) : (
-            <View style={{ flex: 1, backgroundColor: '#E8ECE4' }}>
-              <View style={[styles.mapRoad, styles.mapRoadMain]} />
-              <View style={[styles.mapRoad, styles.mapRoadCross]} />
-              <View style={[styles.mapRoad, styles.mapRoadDiagonal]} />
-              <View style={styles.destinationPin}>
-                <View style={styles.destinationPinIcon}>
-                  <Icon name="pin" size={18} color={Colors.textPrimary} />
-                </View>
-              </View>
-              <View style={styles.youPositionBadge}>
-                <View style={styles.youPositionDot} />
-                <Text style={styles.youPositionText}>YOU (1.2 km away)</Text>
-              </View>
+          <StopMap stop={stop} driver={liveCoords} />
+        </View>
+
+        <View style={styles.locationDetailRow}>
+          <View style={{ flex: 1, paddingRight: 8 }}>
+            <Text style={styles.locationStoreTitle} numberOfLines={1}>
+              {stop.storeName}
+            </Text>
+            {stop.address ? (
+              <Text style={styles.locationAddressText} numberOfLines={1}>
+                {stop.address}
+              </Text>
+            ) : null}
+          </View>
+          {distance && (
+            <View style={styles.proximityBadge}>
+              <Icon name="navigation" size={13} color="#8A5900" />
+              <Text style={styles.proximityText}>{distance} away</Text>
             </View>
           )}
         </View>
 
-        {/* Location Copy & Proximity */}
-        <View style={styles.locationDetailRow}>
-          <View style={{ flex: 1, paddingRight: 8 }}>
-            <Text style={styles.locationStoreTitle} numberOfLines={1}>
-              {storeName}
-            </Text>
-            <Text style={styles.locationAddressText} numberOfLines={1}>
-              {fullAddress}
-            </Text>
-          </View>
-          <View style={styles.proximityBadge}>
-            <Icon name="navigation" size={13} color="#8A5900" />
-            <Text style={styles.proximityText}>{distanceKm} km away</Text>
-          </View>
-        </View>
-
-        {/* Direct Navigation Button */}
-        <Pressable
-          onPress={handleOpenNavigation}
-          accessibilityRole="button"
-          accessibilityLabel="Open Navigation"
-          style={({ pressed }) => [
-            styles.openNavButton,
-            pressed && { backgroundColor: '#F0F0EB' },
-          ]}>
-          <Icon name="navigation" size={17} color={Colors.textPrimary} />
-          <Text style={styles.openNavButtonText}>Open Navigation</Text>
-        </Pressable>
+        {navUrl && (
+          <Pressable
+            onPress={handleOpenNavigation}
+            accessibilityRole="button"
+            accessibilityLabel="Open Navigation"
+            style={({ pressed }) => [
+              styles.openNavButton,
+              pressed && { backgroundColor: '#F0F0EB' },
+            ]}>
+            <Icon name="navigation" size={17} color={Colors.textPrimary} />
+            <Text style={styles.openNavButtonText}>Open Navigation</Text>
+          </Pressable>
+        )}
       </Card>
 
-      {/* Store Manager Contact Card */}
-      <View style={styles.contactCard}>
-        <View style={styles.managerAvatar}>
-          <Text style={styles.managerInitials}>
-            {manager?.name ? manager.name.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase() : 'NR'}
-          </Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.managerRoleLabel}>STORE MANAGER</Text>
-          <Text style={styles.managerName}>{manager?.name ?? 'Nimal Rathnayake'}</Text>
-          <Text style={styles.managerPhone}>{manager?.phone ?? '+94 77 123 4567'}</Text>
-        </View>
-        <Pressable
-          onPress={handleCallManager}
-          accessibilityRole="button"
-          accessibilityLabel="Call Store Manager"
-          style={({ pressed }) => [
-            styles.callButton,
-            pressed && { backgroundColor: '#FFF4DD', opacity: 0.9 },
-          ]}>
-          <Icon name="phone" size={15} color="#8A5900" />
-          <Text style={styles.callButtonText}>Call</Text>
-        </Pressable>
-      </View>
+      {(stop.accessConditions || stop.isVanOnly) && (
+        <>
+          <SectionHeading title="Access conditions" />
+          <View style={styles.accessGrid}>
+            {stop.accessConditions ? (
+              <AccessCard icon="pin" title="Site access" detail={stop.accessConditions} wide />
+            ) : null}
+            {stop.isVanOnly && (
+              <AccessCard icon="alert" title="Van access only" detail="Large trucks cannot enter this site." important wide />
+            )}
+          </View>
+        </>
+      )}
 
-      {/* 5. Delivery Summary & Handling Constraints */}
-      <SectionHeading title="Delivery summary" />
+      {stop.managerName || stop.managerPhone ? (
+        <View style={styles.contactCard}>
+          <View style={styles.managerAvatar}>
+            <Text style={styles.managerInitials}>{initials(stop.managerName) || '—'}</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.managerRoleLabel}>STORE MANAGER</Text>
+            {stop.managerName ? <Text style={styles.managerName}>{stop.managerName}</Text> : null}
+            {stop.managerPhone ? <Text style={styles.managerPhone}>{stop.managerPhone}</Text> : null}
+          </View>
+          {telUrl && (
+            <Pressable
+              onPress={handleCallManager}
+              accessibilityRole="button"
+              accessibilityLabel="Call Store Manager"
+              style={({ pressed }) => [
+                styles.callButton,
+                pressed && { backgroundColor: '#FFF4DD', opacity: 0.9 },
+              ]}>
+              <Icon name="phone" size={15} color="#8A5900" />
+              <Text style={styles.callButtonText}>Call</Text>
+            </Pressable>
+          )}
+        </View>
+      ) : null}
+
+      <SectionHeading title={stop.orderNumber ? `Delivery summary · ${stop.orderNumber}` : 'Delivery summary'} />
       <Card style={styles.summaryCard}>
-        {/* 3-column metric cards */}
         <View style={styles.summaryMetricsRow}>
-          <SummaryMetricCol
-            icon="box"
-            value={String(itemsCount)}
-            unit="Items"
-          />
-          <SummaryMetricCol
-            icon="weight"
-            value={String(weightKg)}
-            unit="kg"
-          />
-          <SummaryMetricCol
-            icon="box"
-            value={String(volumeM3)}
-            unit="m³"
-            last
-          />
+          <SummaryMetricCol icon="box" value={String(stop.itemCount)} unit="Items" />
+          <SummaryMetricCol icon="weight" value={String(Math.round(stop.weightKg))} unit="kg" />
+          <SummaryMetricCol icon="box" value={String(stop.volumeM3)} unit="m³" last />
         </View>
 
-        {/* Temperature specification banner */}
         {isChilled ? (
           <View style={styles.temperatureBannerChilled}>
             <View style={styles.tempIconCircle}>
@@ -434,7 +250,7 @@ export default function CurrentStopScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.tempBannerTitleChilled}>Keep Refrigerated</Text>
               <Text style={styles.tempBannerSubtextChilled}>
-                2–5°C chilled load • Transfer directly to store cold-room
+                Chilled load • Transfer directly to store cold-room
               </Text>
             </View>
           </View>
@@ -614,76 +430,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
     backgroundColor: '#E8ECE4',
-  },
-  mapRoad: {
-    position: 'absolute',
-    backgroundColor: Colors.surfaceWhite,
-    borderWidth: 1,
-    borderColor: '#D4DDD0',
-  },
-  mapRoadMain: {
-    width: '125%',
-    height: 16,
-    left: '-12%',
-    top: '52%',
-    transform: [{ rotate: '-8deg' }],
-  },
-  mapRoadCross: {
-    height: '130%',
-    width: 14,
-    left: '28%',
-    top: '-15%',
-    transform: [{ rotate: '18deg' }],
-  },
-  mapRoadDiagonal: {
-    height: '140%',
-    width: 11,
-    right: '22%',
-    top: '-18%',
-    transform: [{ rotate: '-35deg' }],
-  },
-  destinationPin: {
-    position: 'absolute',
-    left: '58%',
-    top: '32%',
-    width: 40,
-    height: 40,
-    borderTopLeftRadius: 15,
-    borderTopRightRadius: 15,
-    borderBottomRightRadius: 15,
-    borderBottomLeftRadius: 4,
-    backgroundColor: Colors.primaryYellow,
-    alignItems: 'center',
-    justifyContent: 'center',
-    transform: [{ rotate: '-45deg' }],
-    boxShadow: '0px 6px 14px rgba(32, 33, 36, 0.25)',
-  },
-  destinationPinIcon: {
-    transform: [{ rotate: '45deg' }],
-  },
-  youPositionBadge: {
-    position: 'absolute',
-    left: '16%',
-    bottom: '16%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: Colors.surfaceWhite,
-    paddingVertical: 5,
-    paddingHorizontal: 9,
-    borderRadius: 999,
-    boxShadow: Shadow.sm,
-  },
-  youPositionDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#3B82F6',
-  },
-  youPositionText: {
-    ...font(800),
-    fontSize: 9,
-    color: Colors.textPrimary,
   },
   locationDetailRow: {
     flexDirection: 'row',
@@ -925,20 +671,5 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: Colors.textSecondary,
     marginTop: 1,
-  },
-  driverMarker: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  driverMarkerInner: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.primaryYellow,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: '#1f2835',
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.4)',
   },
 });

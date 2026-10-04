@@ -3,8 +3,7 @@
 // ============================================================================
 
 export type OrderPriority = "High" | "Standard" | "Low";
-export type TemperatureReq = "ambient" | "chilled" | "frozen";
-export type TripStatus = "planning" | "loading" | "in_transit" | "completed";
+export type TemperatureReq = "ambient" | "chilled";
 export type ConnectionStatus = "online" | "delayed" | "offline";
 
 export interface DispatcherOrder {
@@ -12,108 +11,87 @@ export interface DispatcherOrder {
   orderNumber: string;
   storeId: string;
   storeName: string;
-  storeBrand: string;
-  storeAddress: string;
   storeInitial: string;
+  storeDistrict: string | null;
+  storeLat: number | null;
+  storeLng: number | null;
+  isVanOnly: boolean;
+  /** Store receiving window as "HH:MM" (24h) from stores.delivery_window_start/end. */
+  windowStart: string | null;
+  windowEnd: string | null;
   totalWeightKg: number;
   totalVolumeM3: number;
+  itemCount: number | null;
   tempRequirement: TemperatureReq;
   priority: OrderPriority;
   deliveryWindow: string;
-  status: "pending" | "assigned" | "deferred" | "in_transit" | "delivered";
   targetDeliveryDate: string;
 }
 
-export interface AssignedOrderSummary {
+export interface PlanningVehicle {
   id: string;
-  orderNumber: string;
-  storeName: string;
-  weightKg: number;
-  volumeM3: number;
-  tempRequirement: TemperatureReq;
-  deliveryWindow: string;
-  stopSequence: number;
-}
-
-export interface VehicleAllocationItem {
-  id: string;
-  tripId: string;
   plateNumber: string;
   vehicleType: string;
-  driverName: string;
-  driverPhone?: string;
   maxWeightKg: number;
-  currentWeightKg: number;
   maxVolumeM3: number;
-  currentVolumeM3: number;
   isRefrigerated: boolean;
   image: string;
-  departureTime: string;
-  cutoffTime: string;
-  bay: string;
-  status: TripStatus;
-  assignedOrders: AssignedOrderSummary[];
+  /** Load already committed to this vehicle's trips on the planning date. */
+  committedWeightKg: number;
+  committedVolumeM3: number;
+  /** Departure time ("HH:MM", 24h) of the vehicle's existing trip, if any. */
+  departureTime: string | null;
+  driverName: string | null;
+  tripNumber: string | null;
+}
+
+export interface OrderQueueItem {
+  id: string;
+  storeName: string;
+  storeInitial: string;
+  orderNumber: string;
+  timeWindow: string;
+  volumeM3: number;
+  priority: OrderPriority;
+  status: string;
+  tempRequirement: TemperatureReq;
+}
+
+export interface FleetCapacityItem {
+  id: string;
+  plate: string;
+  model: string;
   weightPercent: number;
   volumePercent: number;
+  isRefrigerated: boolean;
+  image: string;
+}
+
+export interface OperationalAlert {
+  id: string;
+  type: "capacity" | "time" | "review";
+  title: string;
+  description: string;
+  level: "warning" | "info" | "critical";
 }
 
 export interface CommandCenterData {
   totalOrders: number;
-  ordersConfirmed: number;
-  fleetCapacityPercent: number;
+  pendingOrders: number;
+  fleetCapacityPercent: number | null;
   vehiclesReadyCount: number;
   totalVehiclesCount: number;
   pendingDeferralsCount: number;
-  firstEta: string;
+  firstEta: string | null;
   activeRoutesCount: number;
-  onTimeRatePercent: number;
-  orderQueue: {
-    id: string;
-    storeName: string;
-    storeInitial: string;
-    orderNumber: string;
-    timeWindow: string;
-    volumeM3: number;
-    priority: OrderPriority;
-    status: string;
-    tempRequirement: TemperatureReq;
-  }[];
-  fleetCapacityBreakdown: {
-    id: string;
-    plate: string;
-    model: string;
-    weightPercent: number;
-    volumePercent: number;
-    isRefrigerated: boolean;
-    image: string;
-  }[];
-  operationalAlerts: {
-    id: string;
-    type: "capacity" | "time" | "review";
-    title: string;
-    description: string;
-    level: "warning" | "info" | "critical";
-  }[];
-}
-
-export interface DeferralReviewItem {
-  id: string;
-  orderId: string;
-  orderNumber: string;
-  storeId: string;
-  storeName: string;
-  storeInitial: string;
-  priority: OrderPriority;
-  deliveryWindow: string;
-  volume: number;
-  weight: number;
-  reason: string;
-  rescheduledRun: string;
-  storeNotified: boolean;
+  onTimeRatePercent: number | null;
+  orderQueue: OrderQueueItem[];
+  fleetCapacityBreakdown: FleetCapacityItem[];
+  operationalAlerts: OperationalAlert[];
 }
 
 export interface DeferralSubmissionPayload {
-  orderIds: string[];
+  orders: DispatcherOrder[];
   reason: string;
   rescheduledRun: string;
   notes?: string;
@@ -169,19 +147,4 @@ export interface TrackingKPIs {
   onSchedule: number;
   delayed: number;
   connectivityIssues: number;
-}
-
-export interface AutoAllocationResult {
-  success: boolean;
-  assignedCount: number;
-  deferredCount: number;
-  allocations: {
-    tripId: string;
-    vehiclePlate: string;
-    orderCount: number;
-    assignedWeightKg: number;
-    assignedVolumeM3: number;
-  }[];
-  unassignedOrderIds: string[];
-  message: string;
 }

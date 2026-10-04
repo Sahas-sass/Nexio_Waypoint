@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { TripVehicle, PastLogEntry, ReeferTempCheck } from "../types";
+import { TripVehicle, PastLogEntry, ReeferTempCheck, ExceptionReasonCode } from "../types";
 import {
   fetchTripsWithDetails,
   updatePalletVerification,
@@ -12,8 +12,9 @@ import {
 } from "../services/loaderService";
 import { playScannerSound, triggerHapticFeedback } from "../utils/scannerFeedback";
 import { recordUserActivity } from "@/app/profile/activityLogger";
+import { errorMessage } from "../utils/errorMessage";
 
-export function useTripQueue(initialSelectedTripId?: string) {
+export function useTripQueue() {
   const [trips, setTrips] = useState<TripVehicle[]>([]);
   const [pastLogs, setPastLogs] = useState<PastLogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -25,29 +26,31 @@ export function useTripQueue(initialSelectedTripId?: string) {
     setTimeout(() => setToastMessage(null), 3500);
   }, []);
 
-  // 1. Fetch live data from Supabase
-  const loadDatabaseData = useCallback(async () => {
-    setIsLoading(true);
-    setErrorMsg(null);
+  // 1. Fetch live data from Supabase (state is only set after the await)
+  const refreshData = useCallback(async () => {
     try {
-      const [fetchedTrips, fetchedLogs] = await Promise.all([
-        fetchTripsWithDetails(),
-        fetchPastLogs(),
-      ]);
-
+      const [fetchedTrips, fetchedLogs] = await Promise.all([fetchTripsWithDetails(), fetchPastLogs()]);
       setTrips(fetchedTrips);
       setPastLogs(fetchedLogs);
-    } catch (err: any) {
-      console.error("Error loading database data:", err);
-      setErrorMsg(err.message || "Failed to fetch warehouse data from Supabase");
+      setErrorMsg(null);
+    } catch (err) {
+      setErrorMsg(errorMessage(err, "Failed to fetch warehouse data"));
     } finally {
       setIsLoading(false);
     }
   }, []);
 
+  // User-triggered reload shows the loading state
+  const loadDatabaseData = useCallback(async () => {
+    setIsLoading(true);
+    await refreshData();
+  }, [refreshData]);
+
+  // Initial load + live updates: state is only updated from async callbacks
   useEffect(() => {
-    loadDatabaseData();
-  }, [loadDatabaseData]);
+    const timer = setTimeout(() => void refreshData(), 0);
+    return () => clearTimeout(timer);
+  }, [refreshData]);
 
   // 2. Realtime Supabase Subscription
   useEffect(() => {
@@ -57,14 +60,14 @@ export function useTripQueue(initialSelectedTripId?: string) {
         "postgres_changes",
         { event: "*", schema: "public", table: "pallets" },
         () => {
-          loadDatabaseData();
+          void refreshData();
         }
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "trips" },
         () => {
-          loadDatabaseData();
+          void refreshData();
         }
       )
       .subscribe();
@@ -72,7 +75,7 @@ export function useTripQueue(initialSelectedTripId?: string) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [loadDatabaseData]);
+  }, [refreshData]);
 
   // 3. Optimistic Pallet Toggle
   const togglePallet = async (
@@ -115,7 +118,7 @@ export function useTripQueue(initialSelectedTripId?: string) {
       }
     } catch {
       // Revert on error
-      loadDatabaseData();
+      void refreshData();
       triggerToast("Failed to update pallet verification in database");
     }
   };
@@ -156,7 +159,7 @@ export function useTripQueue(initialSelectedTripId?: string) {
       palletSku?: string;
       orderId?: string;
       storeId?: string;
-      reasonCode: "CARTON_DAMAGED" | "LEAKAGE_DETECTED" | "TEMPERATURE_EXCURSION" | "MISSING_FROM_STAGING" | "OTHER";
+      reasonCode: ExceptionReasonCode;
       notes: string;
     },
     userId?: string
@@ -180,23 +183,10 @@ export function useTripQueue(initialSelectedTripId?: string) {
         });
       }
 
-      // Update trip state to record exception note
-      setTrips((prev) =>
-        prev.map((t) =>
-          t.id === trip.id
-            ? {
-                ...t,
-                hasDiscrepancy: true,
-                discrepancyNote: data.notes,
-              }
-            : t
-        )
-      );
-
-      triggerToast(`Exception logged and dispatched to Command Center!`);
-    } catch (err: any) {
-      console.error("Exception error:", err);
-      triggerToast(err.message || "Failed to log exception");
+      triggerToast("Exception logged and sent to dispatch.");
+    } catch (err) {
+      triggerToast(errorMessage(err, "Failed to log exception"));
+      throw err;
     }
   };
 
@@ -207,6 +197,7 @@ export function useTripQueue(initialSelectedTripId?: string) {
       sealNumber: string;
       hasDiscrepancy: boolean;
       discrepancyNote: string;
+      discrepancyReason?: ExceptionReasonCode;
       signature: string;
       tempCheck?: ReeferTempCheck;
     },
@@ -221,6 +212,7 @@ export function useTripQueue(initialSelectedTripId?: string) {
         sealNumber: data.sealNumber,
         hasDiscrepancy: data.hasDiscrepancy,
         discrepancyNote: data.discrepancyNote,
+        discrepancyReason: data.discrepancyReason,
         signature: data.signature,
         shift,
         tempCheck: data.tempCheck,
@@ -238,11 +230,10 @@ export function useTripQueue(initialSelectedTripId?: string) {
 
       setPastLogs((prev) => [logEntry, ...prev]);
       triggerToast(`Truck ${trip.plateNumber} sealed with ${data.sealNumber} and dispatched!`);
-      await loadDatabaseData();
+      await refreshData();
       return logEntry;
-    } catch (err: any) {
-      console.error("Seal & dispatch error:", err);
-      triggerToast(err.message || "Failed to dispatch vehicle in Supabase");
+    } catch (err) {
+      triggerToast(errorMessage(err, "Failed to dispatch vehicle"));
       return null;
     }
   };
@@ -253,7 +244,6 @@ export function useTripQueue(initialSelectedTripId?: string) {
     isLoading,
     errorMsg,
     toastMessage,
-    triggerToast,
     loadDatabaseData,
     togglePallet,
     verifyBarcodeScan,

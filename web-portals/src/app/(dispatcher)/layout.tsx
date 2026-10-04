@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutGrid, Calendar, MapPin, Clock, Bell, Settings } from "lucide-react";
+import { LayoutGrid, Calendar, MapPin, Clock, Settings } from "lucide-react";
 import UserProfileDropdown from "@/app/profile/UserProfileDropdown";
 
 export default function DispatcherLayout({ children }: { children: React.ReactNode }) {
@@ -59,16 +59,6 @@ export default function DispatcherLayout({ children }: { children: React.ReactNo
 
         {/* Bottom Actions & Profile */}
         <div className="w-full flex flex-col items-center gap-4 mt-auto shrink-0">
-          {/* Alerts */}
-          <button className="flex flex-col items-center gap-1.5 text-waypoint-secondary hover:text-waypoint-text transition-colors group">
-            <div className="relative p-1">
-              <Bell className="w-5.5 h-5.5" strokeWidth={1.5} />
-              {/* Orange Notification Dot */}
-              <div className="absolute top-1 right-1.5 w-1.5 h-1.5 bg-waypoint-orange rounded-full border border-white" />
-            </div>
-            <span className="text-[10px] font-medium tracking-tight group-hover:font-semibold">Alerts</span>
-          </button>
-
           {/* Settings / Profile */}
           <Link 
             href="/profile" 

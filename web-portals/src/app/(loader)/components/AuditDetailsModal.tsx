@@ -10,6 +10,7 @@ interface AuditDetailsModalProps {
 
 export default function AuditDetailsModal({ log, onClose }: AuditDetailsModalProps) {
   if (!log) return null;
+  const fullyVerified = log.verifiedPallets >= log.totalPallets;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200 font-sans">
@@ -52,7 +53,8 @@ export default function AuditDetailsModal({ log, onClose }: AuditDetailsModalPro
           <div>
             <span className="text-[10px] text-gray-400 font-bold uppercase">Driver Assigned</span>
             <p className="font-bold text-gray-800 mt-0.5">
-              {log.driverName} ({log.driverPhone})
+              {log.driverName}
+              {log.driverPhone && ` (${log.driverPhone})`}
             </p>
           </div>
           <div>
@@ -75,16 +77,20 @@ export default function AuditDetailsModal({ log, onClose }: AuditDetailsModalPro
             <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
             <div>
               <span className="font-bold block">Discrepancy / Damage Exception:</span>
-              <p className="mt-0.5">{log.discrepancyNote || "Exception recorded during sequence loading."}</p>
+              {log.discrepancyNote && <p className="mt-0.5">{log.discrepancyNote}</p>}
             </div>
           </div>
         )}
 
-        <div className="bg-emerald-50 border border-emerald-200/80 p-3.5 rounded-2xl flex items-center justify-between text-xs">
+        <div
+          className={`p-3.5 rounded-2xl flex items-center justify-between text-xs border ${
+            fullyVerified ? "bg-emerald-50 border-emerald-200/80" : "bg-amber-50 border-amber-200/80"
+          }`}
+        >
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            <span className="font-bold text-emerald-900">
-              {log.verifiedPallets} Pallets 100% Reverse-Loaded & Verified
+            <CheckCircle2 className={`w-4 h-4 ${fullyVerified ? "text-emerald-600" : "text-amber-600"}`} />
+            <span className={`font-bold ${fullyVerified ? "text-emerald-900" : "text-amber-900"}`}>
+              {log.verifiedPallets} / {log.totalPallets} Pallets Verified
             </span>
           </div>
           <span className="font-bold text-emerald-700">
