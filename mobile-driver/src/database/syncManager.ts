@@ -4,7 +4,7 @@ import {
   type SyncPayload,
   type SyncQueueRecord,
 } from '@/database/schema';
-import { supabase } from '@/lib/supabaseClient';
+import { isSupabaseConfigured, supabase } from '@/lib/supabaseClient';
 import { useQueueStore } from '@/store/queueStore';
 
 /**
@@ -37,6 +37,43 @@ export async function flushSyncQueue(): Promise<void> {
 
     // Initialize pendingCount in Zustand store
     useQueueStore.getState().setPendingCount(pendingRecords.length);
+
+    if (!isSupabaseConfigured) {
+      console.log('[SyncManager] Supabase is not configured. Simulating offline queue flush locally.');
+      for (const record of pendingRecords) {
+        if (!useQueueStore.getState().isOnline) break;
+        // Simulate network transmission delay
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        if (record.action_type === 'POD_COMPLETE') {
+          db.runSync(
+            "UPDATE stops SET status = 'COMPLETED' WHERE id = ?;",
+            [record.stop_id]
+          );
+        } else if (record.action_type === 'STATUS_UPDATE') {
+          try {
+            const payload = JSON.parse(record.payload);
+            if (payload.status) {
+              db.runSync(
+                "UPDATE stops SET status = ? WHERE id = ?;",
+                [payload.status, record.stop_id]
+              );
+            }
+          } catch {}
+        }
+
+        db.runSync(
+          "UPDATE sync_queue SET status = 'SYNCED' WHERE id = ?;",
+          [record.id]
+        );
+
+        const remainingRow = db.getFirstSync<{ count: number }>(
+          "SELECT COUNT(*) as count FROM sync_queue WHERE status = 'PENDING';"
+        );
+        useQueueStore.getState().setPendingCount(remainingRow ? remainingRow.count : 0);
+      }
+      return;
+    }
 
     for (const record of pendingRecords) {
       // If the device went offline mid-sync, abort further sync attempts
@@ -174,6 +211,11 @@ export function getPendingCount(): number {
 export async function downloadTripData(): Promise<void> {
   if (!useQueueStore.getState().isOnline) {
     console.warn('[SyncManager] Cannot download trip data while offline.');
+    return;
+  }
+
+  if (!isSupabaseConfigured) {
+    console.log('[SyncManager] Supabase is not configured. Retaining local SQLite seed data.');
     return;
   }
 
