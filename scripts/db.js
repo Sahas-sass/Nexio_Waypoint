@@ -70,7 +70,7 @@ async function listUsers() {
 
 async function updateProfile(identifier, updates) {
   console.log(`\n🔄 Updating profile for "${identifier}"...`);
-  
+
   const { data: usersData } = await supabase.auth.admin.listUsers();
   const user = usersData.users.find(u => u.email === identifier || u.id === identifier);
 
@@ -199,7 +199,7 @@ $$;
 }
 
 // CLI Arg Parsing
-const [,, command, ...args] = process.argv;
+const [, , command, ...args] = process.argv;
 
 async function main() {
   switch (command) {

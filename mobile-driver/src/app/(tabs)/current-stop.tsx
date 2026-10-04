@@ -108,6 +108,7 @@ export default function CurrentStopScreen() {
         );
       }
 
+      console.log(`[CurrentStop] Loaded stop from SQLite:`, JSON.stringify(foundStop, null, 2));
       setStop(foundStop);
 
       if (foundStop?.manager_id) {
