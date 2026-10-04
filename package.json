@@ -1,0 +1,10 @@
+{
+  "name": "waypoint",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "migrate": "node ./scripts/migrate.js",
+    "seed": "node ./scripts/seed.js",
+    "db:manage": "node ./scripts/db.js"
+  }
+}
