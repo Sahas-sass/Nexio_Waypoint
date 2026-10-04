@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   PanResponder,
   Pressable,
@@ -30,6 +30,15 @@ export function SignaturePad({
   const [confirmed, setConfirmed] = useState<boolean>(
     Boolean(propConfirmed || signed)
   );
+
+  useEffect(() => {
+    const isNowConfirmed = Boolean(propConfirmed || signed);
+    setConfirmed(isNowConfirmed);
+    if (!isNowConfirmed) {
+      setPaths([]);
+      setCurrentPath('');
+    }
+  }, [propConfirmed, signed]);
 
   const isLocked = confirmed || Boolean(propConfirmed || signed);
 
