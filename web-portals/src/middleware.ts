@@ -1,126 +1,66 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { getSupabasePublicEnv } from '@/lib/supabase/env';
+import { LOGIN_PATH, canAccess, getRoleDashboard, hasPortal, isApiPath } from '@/lib/auth/roleRoutes';
 
 export async function middleware(request: NextRequest) {
-  // 1. Initialize the response object
-  let supabaseResponse = NextResponse.next({
-    request,
+  let supabaseResponse = NextResponse.next({ request });
+  const { url, anonKey } = getSupabasePublicEnv();
+
+  // Supabase SSR client that refreshes the session cookie on every request
+  const supabase = createServerClient(url, anonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
+      },
+      setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+        supabaseResponse = NextResponse.next({ request });
+        cookiesToSet.forEach(({ name, value, options }) => supabaseResponse.cookies.set(name, value, options));
+      },
+    },
   });
 
-  // 2. Create the Supabase SSR client with explicitly typed cookies
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
-          // Update the request cookies
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          
-          // Update the response cookies so the browser stores the refreshed token
-          supabaseResponse = NextResponse.next({
-            request,
-          });
-          
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
-
-  // 3. Fetch the current logged-in user securely
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const path = request.nextUrl.pathname;
 
-  const url = request.nextUrl.clone();
-  const path = url.pathname;
+  const redirectTo = (pathname: string) => NextResponse.redirect(new URL(pathname, request.url));
 
-  // 4. Helper function to route users to their specific home pages
-  const getRoleDashboard = (role: string | undefined) => {
-    switch (role) {
-      case 'dispatcher': return '/command-center';
-      case 'loader': return '/trip-queue';
-      case 'store_manager': return '/overview';
-      default: return '/login';
-    }
+  const fetchRole = async (userId: string) => {
+    const { data: profile } = await supabase.from('profiles').select('role').eq('id', userId).maybeSingle();
+    return profile?.role as string | undefined;
   };
 
-  // 5. If the user is on the Login page
-  if (path === '/login') {
-    if (user) {
-      // If already logged in, fetch their role and push them to their dashboard
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single();
-      
-      return NextResponse.redirect(new URL(getRoleDashboard(profile?.role), request.url));
-    }
-    return supabaseResponse;
+  if (path === LOGIN_PATH) {
+    if (!user) return supabaseResponse;
+    const role = await fetchRole(user.id);
+    // Roles without a web portal (drivers) stay on the login page instead of looping
+    return hasPortal(role) ? redirectTo(getRoleDashboard(role)) : supabaseResponse;
   }
 
-  // Allow direct preview for prototype testing if ?preview=true or ?demo=true
-  if (url.searchParams.get('preview') === 'true' || url.searchParams.get('demo') === 'true') {
-    return supabaseResponse;
+  // JSON endpoints answer 401 instead of redirecting; each route still checks its own role
+  if (isApiPath(path)) {
+    return user ? supabaseResponse : NextResponse.json({ error: 'Not signed in' }, { status: 401 });
   }
 
-  // Allow API routes to handle authentication and return JSON instead of HTML redirects
-  if (path.startsWith('/api') || path.startsWith('/profile/update') || path.startsWith('/profile/upload-avatar')) {
-    return supabaseResponse;
-  }
-
-  // 6. If no user is logged in for any other route, kick them to login
   if (!user) {
-    url.pathname = '/login';
-    return NextResponse.redirect(url);
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = LOGIN_PATH;
+    loginUrl.search = '';
+    return NextResponse.redirect(loginUrl);
   }
 
-  // 7. If user is logged in, fetch their specific role from your SQL schema
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single();
-
-  const role = profile?.role;
-
-  // 8. Define the route boundaries based on our Route Groups
-  const isDispatcherRoute = path.startsWith('/command-center') || path.startsWith('/allocation') || path.startsWith('/deferrals') || path.startsWith('/tracking');
-  const isLoaderRoute = path.startsWith('/trip-queue');
-  const isManagerRoute = path.startsWith('/overview') || path.startsWith('/orders') || path.startsWith('/receiving') || path.startsWith('/alerts') || path.startsWith('/history');
-
-  // Redirect root to dashboard
-  if (path === '/') {
-    return NextResponse.redirect(new URL(getRoleDashboard(role), request.url));
+  const role = await fetchRole(user.id);
+  if (path === '/' || !canAccess(role, path)) {
+    return redirectTo(getRoleDashboard(role));
   }
 
-  // 9. Execute Role-Based Access Control (RBAC) Bouncers
-  if (isDispatcherRoute && role !== 'dispatcher') {
-    return NextResponse.redirect(new URL(getRoleDashboard(role), request.url));
-  }
-  
-  if (isLoaderRoute && role !== 'loader') {
-    return NextResponse.redirect(new URL(getRoleDashboard(role), request.url));
-  }
-  
-  if (isManagerRoute && role !== 'store_manager') {
-    return NextResponse.redirect(new URL(getRoleDashboard(role), request.url));
-  }
-
-  // If everything checks out, allow the request to proceed
   return supabaseResponse;
 }
 
-// 10. Configure the Matcher to skip static files, images, and API routes
+// Run on everything except Next.js internals and static image assets
 export const config = {
-  matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
-  ],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 };

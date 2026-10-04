@@ -1,34 +1,29 @@
 "use client";
 
 import { useState } from "react";
-import { createBrowserClient } from "@supabase/ssr";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, Eye, ArrowRight } from "lucide-react";
-
-// Initialize Supabase Client
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { supabase } from "@/lib/supabaseClient";
+import { getRoleDashboard, hasPortal } from "@/lib/auth/roleRoutes";
 
 // Dynamic Content Configuration
 const roleContent = {
   dispatcher: {
-    image: "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?q=80&w=2070&auto=format&fit=crop",
+    image: "/truck_heavy.jpg",
     tagline: "CONNECTED RETAIL LOGISTICS",
     title: "Every delivery,\nright on time.",
     desc: "Plan allocations, defer overflow, and track live routes from one unified command center.",
     email: "dispatch@waypoint.com",
   },
   loader: {
-    image: "https://images.unsplash.com/photo-1553413077-190dd305871c?q=80&w=2070&auto=format&fit=crop",
+    image: "/truck_reefer.jpg",
     tagline: "WAREHOUSE OPERATIONS",
     title: "Load sequences,\nperfectly ordered.",
     desc: "Manage trip queues, enforce reverse-stop loading, and dispatch vehicles efficiently.",
     email: "load@waypoint.com",
   },
   manager: {
-    image: "https://images.unsplash.com/photo-1604719312566-8912e9227c6a?q=80&w=2000&auto=format&fit=crop",
+    image: "/van_express.jpg",
     tagline: "STORE MANAGEMENT",
     title: "Total visibility\nfor your store.",
     desc: "Monitor incoming deliveries, review exception alerts, and manage receiving dashboards.",
@@ -52,29 +47,33 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
-    if (error) {
-      setError(error.message);
+    if (error || !data.user) {
+      setError(error?.message ?? "Sign in failed");
       setLoading(false);
-    } else {
-      const destination = activeRole === "loader" 
-        ? "/trip-queue" 
-        : activeRole === "manager" 
-        ? "/overview" 
-        : "/command-center";
-      router.push(destination);
-      router.refresh();
+      return;
     }
+
+    // Route by the role stored in the database, not by the selected tab
+    const { data: profile } = await supabase.from("profiles").select("role").eq("id", data.user.id).maybeSingle();
+    if (!hasPortal(profile?.role)) {
+      await supabase.auth.signOut();
+      setError("This account has no web portal access. Drivers sign in with the mobile app.");
+      setLoading(false);
+      return;
+    }
+    router.push(getRoleDashboard(profile?.role));
+    router.refresh();
   };
 
   const handleRoleSelect = (role: RoleKey) => {
     setActiveRole(role);
     setEmail(roleContent[role].email);
-    setPassword("Waypoint@2026");
+    setPassword("");
     setError("");
   };
 

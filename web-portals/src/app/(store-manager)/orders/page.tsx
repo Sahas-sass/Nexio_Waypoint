@@ -1,556 +1,350 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import {
-  LayoutGrid,
-  ShoppingBag,
-  Truck,
-  Bell,
-  History,
-  Settings,
   Search,
-  Clock,
+  Calendar,
   ChevronRight,
+  ChevronLeft,
+  Download,
   Check,
-  Lock,
-  Grid,
-  Leaf,
-  Droplet,
-  Snowflake,
+  Clock,
   Package,
-  Coffee,
-  Minus,
-  Plus,
-  ArrowRight,
-  Info,
-  X,
+  ShoppingBag,
+  TriangleAlert,
 } from "lucide-react";
 
-import { useRouter } from "next/navigation";
+// --- Imports from main branch ---
+import { PageHero } from "../components/PageHero";
+import { AsyncView } from "../components/States";
+import { useStore } from "../components/StoreProvider";
+import { useAsyncData } from "../hooks/useAsyncData";
+import { fetchStoreReceipts } from "../services/receiptsService";
 
-// --- Types ---
-interface Store {
+// --- Types & Mock Data Fallback ---
+interface HistoryRow {
   id: string;
-  code: string;
-  name: string;
-  location: string;
+  orderId: string;
+  date: string;
+  type: string;
+  quantity: string;
+  timing: string;
+  status: "Planning" | "Deferred" | "Received";
+  iconType: "bag" | "alert" | "check";
 }
 
-interface Product {
-  id: string;
-  name: string;
-  desc: string;
-  icon: React.ElementType;
-}
-
-interface Category {
-  id: string;
-  name: string;
-  icon: React.ElementType;
-}
-
-const STORES: Store[] = [
-  {
-    id: "fs-22",
-    code: "FS",
-    name: "Fresh Store #22",
-    location: "Colombo Central",
-  },
+const FALLBACK_DATA: HistoryRow[] = [
+  { id: "r1", orderId: "ORD-1058", date: "Sep 27 - 2:14 PM", type: "Daily Grocery", quantity: "45 Units", timing: "Awaiting allocation", status: "Planning", iconType: "bag" },
+  { id: "r2", orderId: "ORD-1048", date: "Sep 26 - 5:42 PM", type: "Daily Grocery", quantity: "32 Units", timing: "Next run - 10:00 AM", status: "Deferred", iconType: "alert" },
+  { id: "r3", orderId: "ORD-1042", date: "Sep 26 - 8:15 AM", type: "Fresh Delivery", quantity: "28 Items", timing: "TRK-024", status: "Received", iconType: "check" },
+  { id: "r4", orderId: "ORD-1036", date: "Sep 25 - 9:12 AM", type: "Fresh Delivery", quantity: "41 Items", timing: "TRK-019", status: "Received", iconType: "check" },
 ];
 
-const CATEGORIES: Category[] = [
-  { id: "produce", name: "Fresh Produce", icon: Leaf },
-  { id: "dairy", name: "Dairy", icon: Droplet },
-  { id: "frozen", name: "Frozen", icon: Snowflake },
-  { id: "grocery", name: "Dry Grocery", icon: Package },
-  { id: "beverage", name: "Beverages", icon: Coffee },
-];
+export default function HistoryPage() {
+  // --- Backend Data Logic (from main branch) ---
+  const { store } = useStore();
+  const loader = useCallback(() => fetchStoreReceipts(store.id), [store.id]);
+  const { data, loading, error, reload } = useAsyncData(loader);
 
-const INITIAL_PRODUCTS: Product[] = [
-  {
-    id: "p1",
-    name: "Fresh Milk",
-    desc: "Chilled • Available: 120 units",
-    icon: Droplet,
-  },
-  {
-    id: "p2",
-    name: "Rice 5kg",
-    desc: "Ambient • Available: 64 units",
-    icon: Package,
-  },
-  {
-    id: "p3",
-    name: "Frozen Vegetables",
-    desc: "Chilled • Available: 56 units",
-    icon: Snowflake,
-  },
-];
-
-export default function OrdersPage() {
-  const router = useRouter();
-  const [activeNav, setActiveNav] = useState<string>("Orders");
+  // --- UI State (from buddhima branch) ---
+  const [activeTab, setActiveTab] = useState<string>("All activity");
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [activeCategory, setActiveCategory] = useState<string>("produce");
-  
-  const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
-  const [isDraftModalOpen, setIsDraftModalOpen] = useState(false);
-  const [isViewAllModalOpen, setIsViewAllModalOpen] = useState(false);
 
-  // State for product quantities
-  const [quantities, setQuantities] = useState<Record<string, number>>({
-    p1: 12,
-    p2: 8,
-    p3: 6,
+  // Map real database data if available, otherwise use fallback UI data
+  const displayData = useMemo(() => {
+    if (data && data.length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return data.map((receipt: any) => ({
+        id: receipt.id,
+        orderId: receipt.order?.displayId || `ORD-${receipt.id.substring(0, 4).toUpperCase()}`,
+        date: new Date(receipt.createdAt || Date.now()).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        type: receipt.order?.type || "Store Delivery",
+        quantity: receipt.totalItems ? `${receipt.totalItems} Items` : "N/A",
+        timing: receipt.vehicleId || "Received",
+        status: "Received",
+        iconType: "check" as const,
+      }));
+    }
+    return FALLBACK_DATA;
+  }, [data]);
+
+  const filteredData = displayData.filter((row) => {
+    const matchesTab = activeTab === "All activity" || row.status === activeTab;
+    const matchesSearch = row.orderId.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesTab && matchesSearch;
   });
-
-  const updateQuantity = (id: string, delta: number) => {
-    setQuantities((prev) => ({
-      ...prev,
-      [id]: Math.max(0, (prev[id] || 0) + delta),
-    }));
-  };
 
   return (
     <>
-      {/* 2. TOP NAVIGATION BAR */}
-      <header className="h-16 bg-white border-b border-[#ECEAE4] px-8 flex items-center justify-between sticky top-0 z-30">
-        <div className="flex items-center gap-6">
-          <button className="flex items-center gap-3 py-1 px-1.5 rounded-xl hover:bg-[#F7F6F2] transition-colors text-left">
-            <div className="bg-[#F5C242] text-neutral-900 font-bold text-xs w-9 h-9 rounded-xl flex items-center justify-center shadow-xs">
-              FS
-            </div>
-            <div className="leading-tight">
-              <div className="text-xs font-bold text-neutral-900">
-                Fresh Store #22
-              </div>
-              <div className="text-[11px] text-neutral-400">
-                Colombo Central
-              </div>
-            </div>
-            <ChevronRight className="w-4 h-4 text-neutral-400 ml-1" />
-          </button>
-
-          <div className="bg-[#F5F4F0] rounded-full px-4 py-2 w-80 lg:w-96 flex items-center gap-2.5 border border-transparent focus-within:border-[#F5C242] focus-within:bg-white transition-all">
-            <Search className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search orders, vehicles, products..."
-              className="bg-transparent text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none w-full"
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center gap-5">
-          <div className="hidden sm:flex items-center gap-2 text-xs text-neutral-500 font-medium">
-            <Clock className="w-3.5 h-3.5 text-neutral-400" />
-            <span>Sunday, September 27</span>
-          </div>
-          <button className="relative w-9 h-9 rounded-xl border border-[#ECEAE4] bg-[#F7F6F2]/70 hover:bg-[#F7F6F2] flex items-center justify-center text-neutral-700 transition-colors">
-            <Bell className="w-4 h-4" />
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[#F59E0B] ring-2 ring-white" />
-          </button>
-          <div className="flex items-center gap-2.5 cursor-pointer pl-1">
-            <div className="bg-[#1C1C1C] text-white text-[11px] font-semibold w-9 h-9 rounded-full flex items-center justify-center">
-              KP
-            </div>
-            <div className="leading-tight hidden md:block">
-              <div className="text-xs font-bold text-neutral-900">
-                Kavindu Perera
-              </div>
-              <div className="text-[11px] text-neutral-400">Store Manager</div>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* 3. MAIN CONTENT AREA */}
-      <main className="p-8 max-w-[1400px] w-full mx-auto">
+      <PageHero title="Order & Delivery History" subtitle={`Review previous orders, receipts, and delivery records for ${store.name}`} />
+      
+      <main className="p-8 max-w-[1400px] w-full mx-auto space-y-6">
+        
         {/* Header Row */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-neutral-900">
-              Create New Order
+              Order & Delivery History
             </h1>
             <p className="text-xs text-neutral-500 mt-1">
-              Order supplies for your next delivery
+              Review previous orders, receipts, and delivery records
             </p>
           </div>
-          <div className="bg-white border border-[#ECEAE4] shadow-sm rounded-full px-4 py-2 flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span className="text-xs font-bold text-emerald-700">
-                Order cutoff: 4:00 PM
-              </span>
+          <button className="bg-white border border-[#ECEAE4] hover:bg-neutral-50 text-neutral-700 font-semibold text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-sm transition-all">
+            <Download className="w-3.5 h-3.5" />
+            <span>Export records</span>
+          </button>
+        </div>
+
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="bg-white px-5 py-4 rounded-2xl border border-[#ECEAE4] shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+            <div className="text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
+              Orders this month
             </div>
-            <div className="w-px h-3 bg-neutral-200" />
-            <span className="text-xs font-semibold text-neutral-900">
-              2h 18m remaining
-            </span>
+            <div className="text-2xl font-bold text-neutral-900 mt-1">
+              {data ? data.length + 2 : 18}
+            </div>
+            <div className="text-[11px] text-neutral-400 mt-1">
+              2 await fulfillment
+            </div>
+          </div>
+
+          <div className="bg-white px-5 py-4 rounded-2xl border border-[#ECEAE4] shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
+                  Items received
+                </div>
+                <div className="text-2xl font-bold text-neutral-900 mt-1">
+                  428
+                </div>
+                <div className="text-[11px] text-neutral-400 mt-1">
+                  99.2% match
+                </div>
+              </div>
+              <div className="bg-emerald-50 text-emerald-600 w-8 h-8 rounded-lg flex items-center justify-center">
+                <Check className="w-4 h-4 stroke-[2.5]" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white px-5 py-4 rounded-2xl border border-[#ECEAE4] shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
+                  On-time deliveries
+                </div>
+                <div className="text-2xl font-bold text-neutral-900 mt-1">
+                  94%
+                </div>
+                <div className="text-[11px] text-neutral-400 mt-1">
+                  3% from last month
+                </div>
+              </div>
+              <div className="bg-blue-50 text-blue-600 w-8 h-8 rounded-lg flex items-center justify-center">
+                <Clock className="w-4 h-4" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white px-5 py-4 rounded-2xl border border-[#ECEAE4] shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
+                  Reported issues
+                </div>
+                <div className="text-2xl font-bold text-neutral-900 mt-1">
+                  2
+                </div>
+                <div className="text-[11px] text-neutral-400 mt-1">
+                  Both resolved
+                </div>
+              </div>
+              <div className="bg-amber-50 text-amber-600 w-8 h-8 rounded-lg flex items-center justify-center">
+                <Package className="w-4 h-4" />
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          {/* Left Content (8 Cols) */}
-          <div className="lg:col-span-8 space-y-8">
-            {/* Step 1: Choose order type */}
-            <section className="bg-white p-6 rounded-2xl border border-[#ECEAE4] shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-base font-bold text-neutral-900">
-                    Choose order type
-                  </h2>
-                  <p className="text-xs text-neutral-400 mt-0.5">
-                    Select a store range to see its ordering catalogue
-                  </p>
-                </div>
-                <span className="text-[10px] font-bold text-neutral-400 tracking-wider uppercase">
-                  STEP 1 OF 2
-                </span>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                {/* Active Card */}
-                <div className="relative border-2 border-[#F5C242] bg-[#FDF6E2]/30 rounded-xl p-3 flex items-center gap-3 cursor-pointer">
-                  <div className="w-12 h-12 rounded-lg bg-emerald-100 overflow-hidden shrink-0">
-                    <img
-                      src="https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=150&q=80"
-                      alt="Fresh Produce"
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-neutral-900">
-                      Fresh
-                    </div>
-                    <div className="text-[10px] text-neutral-500">
-                      Daily Grocery Order
-                    </div>
-                  </div>
-                  <div className="absolute -top-2 -right-2 w-5 h-5 bg-[#F5C242] rounded-full flex items-center justify-center border-2 border-white">
-                    <Check className="w-3 h-3 text-neutral-900 stroke-[3]" />
-                  </div>
-                </div>
-
-                {/* Disabled Card */}
-                <div className="border border-[#ECEAE4] bg-neutral-50 rounded-xl p-3 flex items-center gap-3 cursor-not-allowed opacity-70">
-                  <div className="w-12 h-12 rounded-lg bg-orange-50 border border-orange-100 flex items-center justify-center shrink-0">
-                    <Lock className="w-5 h-5 text-orange-300" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-neutral-900">
-                      Style
-                    </div>
-                    <div className="text-[10px] text-neutral-500">
-                      Apparel Seasonal Order
-                    </div>
-                  </div>
-                </div>
-
-                {/* Inactive Card */}
-                <div className="border border-[#ECEAE4] bg-white hover:bg-neutral-50 rounded-xl p-3 flex items-center gap-3 cursor-pointer transition-colors">
-                  <div className="w-12 h-12 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
-                    <Grid className="w-5 h-5 text-blue-400" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-neutral-900">
-                      Tech
-                    </div>
-                    <div className="text-[10px] text-neutral-500">
-                      High-value Product Order
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            {/* Step 2: Fresh Catalogue & Product List */}
-            <section className="bg-white p-6 rounded-2xl border border-[#ECEAE4] shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-base font-bold text-neutral-900">
-                    Fresh catalogue
-                  </h2>
-                  <p className="text-xs text-neutral-400 mt-0.5">
-                    Daily ordering • Chilled handling
-                  </p>
-                </div>
-                <button 
-                  onClick={() => setIsViewAllModalOpen(true)}
-                  className="text-xs font-semibold text-neutral-600 hover:text-neutral-900 flex items-center gap-1 transition-colors"
-                >
-                  <span>View all</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              {/* Horizontal Categories */}
-              <div className="flex overflow-x-auto gap-3 pb-2 mb-4 scrollbar-hide">
-                {CATEGORIES.map((cat) => {
-                  const Icon = cat.icon;
-                  const isActive = activeCategory === cat.id;
+        {/* Table Container */}
+        <div className="bg-white rounded-2xl border border-[#ECEAE4] shadow-[0_1px_3px_rgba(0,0,0,0.02)] overflow-hidden">
+          {/* Table Controls */}
+          <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#ECEAE4]">
+            {/* Tabs */}
+            <div className="flex items-center gap-2">
+              {["All activity", "Received", "Planning", "Deferred"].map(
+                (tab) => {
+                  const isActive = activeTab === tab;
                   return (
                     <button
-                      key={cat.id}
-                      onClick={() => setActiveCategory(cat.id)}
-                      className={`flex flex-col items-center justify-center gap-2 min-w-[104px] py-3 px-2 rounded-xl border transition-all ${
+                      key={tab}
+                      onClick={() => setActiveTab(tab)}
+                      className={`px-4 py-2 rounded-lg text-[11px] font-bold transition-all ${
                         isActive
-                          ? "border-[#F5C242] bg-[#FDF6E2]"
-                          : "border-[#ECEAE4] bg-white hover:bg-neutral-50"
+                          ? "bg-[#FDF6E2] text-neutral-900"
+                          : "text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700"
                       }`}
                     >
-                      <Icon
-                        className={`w-5 h-5 ${
-                          isActive ? "text-amber-600" : "text-neutral-500"
-                        }`}
-                      />
-                      <span
-                        className={`text-[11px] font-bold ${
-                          isActive ? "text-neutral-900" : "text-neutral-600"
-                        }`}
-                      >
-                        {cat.name}
-                      </span>
+                      {tab}
                     </button>
                   );
-                })}
-              </div>
+                }
+              )}
+            </div>
 
-              {/* Product List */}
-              <div className="divide-y divide-[#ECEAE4]">
-                {INITIAL_PRODUCTS.map((prod) => {
-                  const Icon = prod.icon;
-                  const isYellow = prod.id === "p1" || prod.id === "p2";
-                  return (
-                    <div
-                      key={prod.id}
-                      className="py-4 flex items-center justify-between"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div
-                          className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                            prod.id === "p1" || prod.id === "p2"
-                              ? "bg-[#FDF6E2] text-amber-600"
-                              : "bg-cyan-50 text-cyan-600"
-                          }`}
-                        >
-                          <Icon className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <div className="text-sm font-bold text-neutral-900">
-                            {prod.name}
-                          </div>
-                          <div className="text-[11px] text-neutral-500 mt-0.5">
-                            {prod.desc}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Counter Widget */}
-                      <div className="flex items-center bg-[#F7F6F2] rounded-lg border border-[#ECEAE4] overflow-hidden">
-                        <button
-                          onClick={() => updateQuantity(prod.id, -1)}
-                          className="px-3 py-2 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900 transition-colors"
-                        >
-                          <Minus className="w-3.5 h-3.5" />
-                        </button>
-                        <div className="w-10 text-center text-xs font-bold text-neutral-900 bg-white py-2 border-x border-[#ECEAE4]">
-                          {quantities[prod.id]}
-                        </div>
-                        <button
-                          onClick={() => updateQuantity(prod.id, 1)}
-                          className="px-3 py-2 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900 transition-colors"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+            {/* Filters */}
+            <div className="flex items-center gap-3">
+              <div className="bg-[#F7F6F2] rounded-xl px-3 py-2 flex items-center gap-2 border border-[#ECEAE4]">
+                <Search className="w-3.5 h-3.5 text-neutral-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search order number..."
+                  className="bg-transparent text-[11px] font-medium text-neutral-800 placeholder-neutral-400 focus:outline-none w-40"
+                />
               </div>
-            </section>
+              <button className="bg-white border border-[#ECEAE4] hover:bg-neutral-50 text-neutral-700 font-semibold text-[11px] px-3 py-2 rounded-xl flex items-center gap-2 transition-all">
+                <Calendar className="w-3.5 h-3.5 text-neutral-400" />
+                <span>Last 30 days</span>
+                <ChevronRight className="w-3 h-3 text-neutral-400 ml-1" />
+              </button>
+            </div>
           </div>
 
-          {/* Right Sidebar (Summary - 4 Cols) */}
-          <div className="lg:col-span-4 sticky top-24">
-            <div className="bg-white rounded-2xl border border-[#ECEAE4] shadow-md overflow-hidden relative">
-              {/* Yellow subtle background blob */}
-              <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-[#FDF6E2]/80 to-transparent z-0" />
-
-              <div className="p-6 relative z-10">
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-[#F5C242] text-neutral-900 flex items-center justify-center shadow-sm">
-                    <ShoppingBag className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-bold text-amber-700 tracking-wider uppercase mb-0.5">
-                      CURRENT ORDER
-                    </div>
-                    <div className="text-base font-bold text-neutral-900">
-                      Daily Grocery Order
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center mt-8 pb-6 border-b border-[#ECEAE4]">
-                  <div className="flex-1 text-center border-r border-[#ECEAE4]">
-                    <div className="text-3xl font-bold text-neutral-900">
-                      12
-                    </div>
-                    <div className="text-[10px] font-medium text-neutral-500 mt-1 uppercase tracking-wider">
-                      Products
-                    </div>
-                  </div>
-                  <div className="flex-1 text-center">
-                    <div className="text-3xl font-bold text-neutral-900">
-                      46
-                    </div>
-                    <div className="text-[10px] font-medium text-neutral-500 mt-1 uppercase tracking-wider">
-                      Units
-                    </div>
-                  </div>
-                </div>
-
-                <div className="py-5 space-y-3 border-b border-[#ECEAE4]">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-neutral-500">Estimated volume</span>
-                    <span className="font-bold text-neutral-900">2.4 m³</span>
-                  </div>
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-neutral-500">Estimated weight</span>
-                    <span className="font-bold text-neutral-900">420 kg</span>
-                  </div>
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-neutral-500">Expected delivery</span>
-                    <span className="font-bold text-neutral-900">Tomorrow</span>
-                  </div>
-                </div>
-
-                <div className="mt-5 p-3 rounded-xl bg-[#FDF6E2] border border-[#F5C242]/30 flex gap-2.5">
-                  <Info className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                  <p className="text-[11px] font-medium text-amber-900 leading-relaxed">
-                    Submit before 4:00 PM for tomorrow's planning cycle.
-                  </p>
-                </div>
-
-                <div className="mt-5 space-y-3 text-center">
-                  <button 
-                    onClick={() => setIsSubmitModalOpen(true)}
-                    className="w-full py-3 rounded-xl bg-[#F5C242] hover:bg-[#eab308] active:scale-[0.99] text-neutral-900 font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm"
-                  >
-                    <span>Review & submit order</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                  <button 
-                    onClick={() => setIsDraftModalOpen(true)}
-                    className="text-xs font-semibold text-neutral-500 hover:text-neutral-900 transition-colors"
-                  >
-                    Save as draft
-                  </button>
-                </div>
+          {/* Table (Wrapped in AsyncView to handle loading/error states) */}
+          <AsyncView
+            data={displayData}
+            loading={loading}
+            error={error}
+            onRetry={reload}
+            isEmpty={(rows) => rows.length === 0}
+            empty={{ title: "No receipts yet", hint: "Deliveries you confirm on the Receiving page will be listed here." }}
+          >
+            {() => (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-[#ECEAE4] bg-[#FDFDFC]">
+                      <th className="py-4 px-6 text-[10px] font-bold tracking-wider text-neutral-400 uppercase">
+                        Order
+                      </th>
+                      <th className="py-4 px-6 text-[10px] font-bold tracking-wider text-neutral-400 uppercase">
+                        Order Type
+                      </th>
+                      <th className="py-4 px-6 text-[10px] font-bold tracking-wider text-neutral-400 uppercase">
+                        Quantity
+                      </th>
+                      <th className="py-4 px-6 text-[10px] font-bold tracking-wider text-neutral-400 uppercase">
+                        Vehicle / Timing
+                      </th>
+                      <th className="py-4 px-6 text-[10px] font-bold tracking-wider text-neutral-400 uppercase">
+                        Status
+                      </th>
+                      <th className="py-4 px-6"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#ECEAE4]">
+                    {filteredData.map((row) => (
+                      <tr
+                        key={row.id}
+                        className="hover:bg-[#FAF9F6] transition-colors group cursor-pointer"
+                      >
+                        <td className="py-4 px-6">
+                          <div className="flex items-center gap-4">
+                            <div
+                              className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                                row.iconType === "bag"
+                                  ? "bg-[#FDF6E2] text-amber-600"
+                                  : row.iconType === "alert"
+                                  ? "bg-amber-50 text-amber-600"
+                                  : "bg-emerald-50 text-emerald-600"
+                              }`}
+                            >
+                              {row.iconType === "bag" && (
+                                <ShoppingBag className="w-4 h-4" />
+                              )}
+                              {row.iconType === "alert" && (
+                                <TriangleAlert className="w-4 h-4" />
+                              )}
+                              {row.iconType === "check" && (
+                                <Check className="w-4 h-4 stroke-[2.5]" />
+                              )}
+                            </div>
+                            <div>
+                              <div className="text-[13px] font-bold text-neutral-900">
+                                {row.orderId}
+                              </div>
+                              <div className="text-[11px] text-neutral-400 mt-0.5">
+                                {row.date}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-4 px-6 text-[13px] font-medium text-neutral-600">
+                          {row.type}
+                        </td>
+                        <td className="py-4 px-6 text-[13px] font-bold text-neutral-900">
+                          {row.quantity}
+                        </td>
+                        <td className="py-4 px-6 text-[13px] font-medium text-neutral-600">
+                          {row.timing}
+                        </td>
+                        <td className="py-4 px-6">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                row.status === "Planning"
+                                  ? "bg-[#F5C242]"
+                                  : row.status === "Deferred"
+                                  ? "bg-amber-500"
+                                  : "bg-emerald-500"
+                              }`}
+                            />
+                            <span className="text-[13px] font-bold text-neutral-900">
+                              {row.status}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-4 px-6 text-right">
+                          <ChevronRight className="w-4 h-4 text-neutral-300 group-hover:text-neutral-600 inline-block transition-colors" />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
+            )}
+          </AsyncView>
+
+          {/* Pagination */}
+          <div className="p-5 flex items-center justify-between border-t border-[#ECEAE4] bg-[#FDFDFC]">
+            <div className="text-[11px] font-medium text-neutral-500">
+              Showing <span className="font-bold text-neutral-900">1-{Math.min(10, filteredData.length)}</span>{" "}
+              of {filteredData.length} records
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button className="w-8 h-8 rounded-lg border border-[#ECEAE4] flex items-center justify-center text-neutral-400 hover:bg-neutral-50 transition-colors">
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button className="w-8 h-8 rounded-lg bg-[#F5C242] text-neutral-900 font-bold text-xs shadow-sm flex items-center justify-center">
+                1
+              </button>
+              <button className="w-8 h-8 rounded-lg border border-transparent hover:bg-neutral-100 text-neutral-600 font-bold text-xs transition-colors flex items-center justify-center">
+                2
+              </button>
+              <button className="w-8 h-8 rounded-lg border border-transparent hover:bg-neutral-100 text-neutral-600 font-bold text-xs transition-colors flex items-center justify-center">
+                3
+              </button>
+              <button className="w-8 h-8 rounded-lg border border-[#ECEAE4] flex items-center justify-center text-neutral-600 hover:bg-neutral-50 transition-colors">
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
           </div>
         </div>
       </main>
-
-      {/* View All Modal */}
-      {isViewAllModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl w-full max-w-2xl overflow-hidden shadow-xl border border-[#ECEAE4] animate-in fade-in zoom-in duration-200">
-            <div className="px-6 py-4 border-b border-[#ECEAE4] flex items-center justify-between bg-[#FDFDFC]">
-              <div>
-                <h2 className="text-lg font-bold text-neutral-900">Full Fresh Catalogue</h2>
-                <p className="text-xs text-neutral-500 mt-0.5">Browse all available items in the Fresh category</p>
-              </div>
-              <button 
-                onClick={() => setIsViewAllModalOpen(false)}
-                className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center text-neutral-600 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="p-6 text-center">
-              <div className="w-16 h-16 bg-neutral-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <Search className="w-8 h-8 text-neutral-400" />
-              </div>
-              <h3 className="text-lg font-bold text-neutral-900 mb-2">Catalogue Search</h3>
-              <p className="text-sm text-neutral-500 mb-6 max-w-md mx-auto">
-                The full catalogue view with advanced filtering and search capabilities is loading. This will display all 400+ fresh items.
-              </p>
-              <button 
-                onClick={() => setIsViewAllModalOpen(false)}
-                className="px-6 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-sm rounded-xl transition-all shadow-sm"
-              >
-                Got it
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Submit Order Modal */}
-      {isSubmitModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-xl border border-[#ECEAE4] animate-in fade-in zoom-in duration-200">
-            <div className="p-6 text-center">
-              <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Check className="w-6 h-6 stroke-[3]" />
-              </div>
-              <h3 className="text-lg font-bold text-neutral-900 mb-2">Order Submitted</h3>
-              <p className="text-sm text-neutral-500 mb-6">
-                Your daily grocery order of 46 units has been successfully submitted for tomorrow's planning cycle.
-              </p>
-              
-              <div className="flex flex-col gap-3">
-                <button 
-                  onClick={() => {
-                    setIsSubmitModalOpen(false);
-                  }}
-                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-bold text-sm rounded-xl transition-all shadow-sm"
-                >
-                  Done
-                </button>
-                <button 
-                  onClick={() => {
-                    setIsSubmitModalOpen(false);
-                    router.push("/history");
-                  }}
-                  className="w-full py-2.5 bg-white border border-[#ECEAE4] hover:bg-neutral-50 active:scale-[0.99] text-neutral-700 font-bold text-sm rounded-xl transition-all shadow-sm"
-                >
-                  View Order History
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Save Draft Modal */}
-      {isDraftModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-xl border border-[#ECEAE4] animate-in fade-in zoom-in duration-200">
-            <div className="p-6 text-center">
-              <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Info className="w-6 h-6 stroke-[2]" />
-              </div>
-              <h3 className="text-lg font-bold text-neutral-900 mb-2">Draft Saved</h3>
-              <p className="text-sm text-neutral-500 mb-6">
-                Your current order quantities have been safely saved as a draft. You can resume editing this order later.
-              </p>
-              
-              <button 
-                onClick={() => setIsDraftModalOpen(false)}
-                className="w-full py-2.5 bg-[#F5C242] hover:bg-[#eab308] active:scale-[0.99] text-neutral-900 font-bold text-sm rounded-xl transition-all shadow-sm"
-              >
-                Continue Working
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

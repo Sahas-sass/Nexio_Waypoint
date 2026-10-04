@@ -1,99 +1,59 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabasePublicEnv, getSupabaseServiceKey } from "@/lib/supabase/env";
+import { sniffImageType, validateAvatarFile } from "@/lib/profile/avatarFile";
 
+/** Uploads the signed-in user's avatar to `avatars/<user id>/…` and stores its URL on their profile. */
 export async function POST(request: NextRequest) {
-  try {
-    // 1. Get authenticated user from request cookies
-    const supabaseUserClient = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return request.cookies.getAll();
-          },
-          setAll() {},
-        },
-      }
-    );
-
-    const {
-      data: { user },
-      error: userErr,
-    } = await supabaseUserClient.auth.getUser();
-
-    if (userErr || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // 2. Parse uploaded file from formData
-    const formData = await request.formData();
-    const file = formData.get("file") as File | null;
-
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
-    }
-
-    // Validate size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      return NextResponse.json({ error: "Image file exceeds 5MB limit" }, { status: 400 });
-    }
-
-    // 3. Admin Supabase client for storage upload
-    const serviceKey = process.env.SUPABASE_SERVICE_KEY || "";
-    const supabaseAdmin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      serviceKey,
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    );
-
-    const fileExt = file.name.split(".").pop() || "png";
-    const cleanExt = fileExt.toLowerCase().replace(/[^a-z0-9]/g, "");
-    const filePath = `${user.id}/avatar-${Date.now()}.${cleanExt}`;
-
-    const buffer = Buffer.from(await file.arrayBuffer());
-
-    // Upload to avatars bucket
-    const { error: uploadErr } = await supabaseAdmin.storage
-      .from("avatars")
-      .upload(filePath, buffer, {
-        contentType: file.type || "image/png",
-        upsert: true,
-      });
-
-    if (uploadErr) {
-      return NextResponse.json({ error: uploadErr.message }, { status: 500 });
-    }
-
-    // Get public URL
-    const { data: urlData } = supabaseAdmin.storage
-      .from("avatars")
-      .getPublicUrl(filePath);
-
-    const avatarUrl = urlData.publicUrl;
-
-    // 4. Update user metadata
-    await supabaseAdmin.auth.admin.updateUserById(user.id, {
-      user_metadata: {
-        ...user.user_metadata,
-        avatar_url: avatarUrl,
-      },
-    });
-
-    // 5. Update profiles table if possible
-    try {
-      await supabaseAdmin
-        .from("profiles")
-        .update({ avatar_url: avatarUrl })
-        .eq("id", user.id);
-    } catch {
-      // ignore if column not present yet
-    }
-
-    return NextResponse.json({ success: true, avatarUrl });
-  } catch (err: any) {
-    console.error("Avatar upload API error:", err);
-    return NextResponse.json({ error: err.message || "Upload failed" }, { status: 500 });
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
+
+  let file: File | null = null;
+  try {
+    const value = (await request.formData()).get("file");
+    file = value instanceof File ? value : null;
+  } catch {
+    return NextResponse.json({ error: "Expected multipart form data" }, { status: 400 });
+  }
+
+  const check = validateAvatarFile(file);
+  if (!check.ok || !file) {
+    return NextResponse.json({ error: check.ok ? "No file provided" : check.error }, { status: 400 });
+  }
+
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (sniffImageType(bytes) !== file.type) {
+    return NextResponse.json({ error: "File content does not match its image type" }, { status: 400 });
+  }
+
+  // Storage write uses the service key server-side only; the path is always scoped to the caller.
+  const { url } = getSupabasePublicEnv();
+  const admin = createClient(url, getSupabaseServiceKey(), {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const filePath = `${user.id}/avatar-${Date.now()}.${check.extension}`;
+  const { error: uploadError } = await admin.storage
+    .from("avatars")
+    .upload(filePath, bytes, { contentType: file.type, upsert: false });
+  if (uploadError) {
+    console.error("[profile/upload-avatar] upload failed:", uploadError.message);
+    return NextResponse.json({ error: "Upload failed" }, { status: 500 });
+  }
+
+  const avatarUrl = admin.storage.from("avatars").getPublicUrl(filePath).data.publicUrl;
+
+  const { error: profileError } = await supabase.from("profiles").update({ avatar_url: avatarUrl }).eq("id", user.id);
+  if (profileError) {
+    console.error("[profile/upload-avatar] profile update failed:", profileError.message);
+    return NextResponse.json({ error: "Could not save avatar" }, { status: 500 });
+  }
+  await supabase.auth.updateUser({ data: { avatar_url: avatarUrl } });
+
+  return NextResponse.json({ success: true, avatarUrl });
 }

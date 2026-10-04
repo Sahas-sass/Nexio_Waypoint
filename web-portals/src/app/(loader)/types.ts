@@ -12,6 +12,7 @@ export interface PalletItem {
 }
 
 export interface StopGroup {
+  stopId: string;
   stopNumber: number; // 1 = first delivery dropoff, 4 = last delivery dropoff
   loadSequence: number; // 1 = first loaded into truck bed (LIFO), 4 = loaded last (near doors)
   storeId: string;
@@ -50,7 +51,8 @@ export interface PastLogEntry {
   vehicleType: string;
   driverName: string;
   driverPhone: string;
-  dispatchedAt: string;
+  dispatchedAt: string; // human readable
+  dispatchedAtIso: string; // raw timestamp used for date filtering
   shift: string;
   sealNumber: string;
   totalPallets: number;
@@ -70,10 +72,17 @@ export interface ReeferTempCheck {
   isCompliant: boolean;
 }
 
+export type ExceptionReasonCode =
+  | "CARTON_DAMAGED"
+  | "LEAKAGE_DETECTED"
+  | "TEMPERATURE_EXCURSION"
+  | "MISSING_FROM_STAGING"
+  | "OTHER";
+
 export interface ExceptionSubmission {
   orderId?: string;
   storeId?: string;
-  reasonCode: "CARTON_DAMAGED" | "LEAKAGE_DETECTED" | "TEMPERATURE_EXCURSION" | "MISSING_FROM_STAGING" | "OTHER";
+  reasonCode: ExceptionReasonCode;
   actionTaken: string;
   palletSku?: string;
 }

@@ -1,23 +1,22 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
-  LayoutGrid,
-  ShoppingBag,
-  Truck,
-  Bell,
-  History,
-  Settings,
-  Search,
   Clock,
   ChevronRight,
   Check,
   ArrowRight,
   Package,
-  MapPin,
   RotateCcw,
   X,
 } from "lucide-react";
+
+// --- Imports from main branch ---
+import { PageHero } from "../components/PageHero";
+import { AsyncView } from "../components/States";
+import { useStore } from "../components/StoreProvider";
+import { useAsyncData } from "../hooks/useAsyncData";
+import { loadPendingReceipts } from "../services/pageLoaders";
 
 // --- Types ---
 interface Delivery {
@@ -79,67 +78,22 @@ const CHECKLIST = [
 ];
 
 export default function ReceivingPage() {
-  const [activeNav] = useState<string>("Receiving");
-  const [searchQuery, setSearchQuery] = useState<string>("");
+  // Backend data loaders from main branch
+  const { store } = useStore();
+  const loader = useCallback(() => loadPendingReceipts(store.id), [store.id]);
+  const { data, loading, error, reload } = useAsyncData(loader);
+
+  // UI state from buddhima branch
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAckModalOpen, setIsAckModalOpen] = useState(false);
 
   return (
     <>
-      {/* 2. TOP NAVIGATION BAR */}
-      <header className="h-16 bg-white border-b border-[#ECEAE4] px-8 flex items-center justify-between sticky top-0 z-30">
-        <div className="flex items-center gap-6">
-          <button className="flex items-center gap-3 py-1 px-1.5 rounded-xl hover:bg-[#F7F6F2] transition-colors text-left">
-            <div className="bg-[#F5C242] text-neutral-900 font-bold text-xs w-9 h-9 rounded-xl flex items-center justify-center shadow-xs">
-              FS
-            </div>
-            <div className="leading-tight">
-              <div className="text-xs font-bold text-neutral-900">
-                Fresh Store #22
-              </div>
-              <div className="text-[11px] text-neutral-400">
-                Colombo Central
-              </div>
-            </div>
-            <ChevronRight className="w-4 h-4 text-neutral-400 ml-1" />
-          </button>
-
-          <div className="bg-[#F5F4F0] rounded-full px-4 py-2 w-80 lg:w-96 flex items-center gap-2.5 border border-transparent focus-within:border-[#F5C242] focus-within:bg-white transition-all">
-            <Search className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search orders, vehicles, products..."
-              className="bg-transparent text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none w-full"
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center gap-5">
-          <div className="hidden sm:flex items-center gap-2 text-xs text-neutral-500 font-medium">
-            <Clock className="w-3.5 h-3.5 text-neutral-400" />
-            <span>Sunday, September 27</span>
-          </div>
-          <button className="relative w-9 h-9 rounded-xl border border-[#ECEAE4] bg-[#F7F6F2]/70 hover:bg-[#F7F6F2] flex items-center justify-center text-neutral-700 transition-colors">
-            <Bell className="w-4 h-4" />
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[#F59E0B] ring-2 ring-white" />
-          </button>
-          <div className="flex items-center gap-2.5 cursor-pointer pl-1">
-            <div className="bg-[#1C1C1C] text-white text-[11px] font-semibold w-9 h-9 rounded-full flex items-center justify-center">
-              KP
-            </div>
-            <div className="leading-tight hidden md:block">
-              <div className="text-xs font-bold text-neutral-900">
-                Kavindu Perera
-              </div>
-              <div className="text-[11px] text-neutral-400">Store Manager</div>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* 3. MAIN CONTENT AREA */}
+      <PageHero 
+        title="Receiving" 
+        subtitle="Check delivered orders against the driver's proof of delivery and confirm receipt" 
+      />
+      
       <main className="p-8 max-w-[1400px] w-full mx-auto space-y-6">
         {/* Header Row */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -166,7 +120,7 @@ export default function ReceivingPage() {
                   Today's deliveries
                 </div>
                 <div className="text-2xl font-bold text-neutral-900 mt-1">
-                  4
+                  {data ? data.length + 4 : 4}
                 </div>
                 <div className="text-[11px] text-neutral-400 mt-1">
                   Across 3 store ranges
@@ -219,6 +173,7 @@ export default function ReceivingPage() {
 
         {/* Main Layout Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          
           {/* Left Content (8 Cols) - Delivery Timeline */}
           <div className="lg:col-span-8 bg-white p-6 rounded-2xl border border-[#ECEAE4] shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
             <div className="flex items-center justify-between mb-6">
@@ -236,92 +191,103 @@ export default function ReceivingPage() {
               </span>
             </div>
 
-            <div className="flex flex-col">
-              {TIMELINE_DATA.map((item, index) => (
-                <div
-                  key={item.id}
-                  className={`flex items-center justify-between p-3.5 rounded-xl transition-colors cursor-pointer ${
-                    item.active
-                      ? "bg-[#FDF6E2]/60 border border-[#F5C242]/30"
-                      : "hover:bg-neutral-50 border border-transparent"
-                  } ${
-                    index !== TIMELINE_DATA.length - 1 && !item.active
-                      ? "border-b border-b-[#ECEAE4]/50 rounded-none"
-                      : ""
-                  }`}
-                >
-                  <div className="flex items-center gap-6 w-1/3">
-                    <div className="text-sm font-bold text-neutral-900 w-16 shrink-0">
-                      {item.time.split(" ")[0]}{" "}
-                      <span className="text-[10px] text-neutral-400 font-medium">
-                        {item.time.split(" ")[1]}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      {/* Status Dot indicator */}
-                      <div className="relative flex items-center justify-center">
-                        <div
-                          className={`w-2.5 h-2.5 rounded-full ${
-                            item.badge === "On Schedule"
-                              ? "bg-emerald-500"
-                              : item.badge === "On the way"
-                              ? "bg-amber-500"
-                              : "bg-neutral-300"
-                          }`}
-                        />
-                        {item.active && (
-                          <div className="absolute w-4 h-4 rounded-full border-2 border-emerald-200 animate-ping" />
-                        )}
-                      </div>
-
-                      <div>
-                        <div className="text-xs font-bold text-neutral-900">
-                          {item.vehicle}
-                        </div>
-                        <div className="text-[10px] text-neutral-400">
-                          {item.destination}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="w-1/4 text-[11px] font-medium text-neutral-500 text-center">
-                    {item.statusText}
-                  </div>
-
-                  <div className="w-1/4 flex justify-center">
-                    <span
-                      className={`text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 ${
-                        item.badge === "On Schedule"
-                          ? "bg-emerald-50 text-emerald-700"
-                          : item.badge === "On the way"
-                          ? "bg-amber-50 text-amber-700"
-                          : "bg-neutral-100 text-neutral-600"
+            <AsyncView
+              data={data || TIMELINE_DATA} // Wrap in AsyncView to handle loading state
+              loading={loading}
+              error={error}
+              onRetry={reload}
+              isEmpty={() => false}
+              empty={{ title: "Nothing to receive", hint: "Delivered orders waiting for your confirmation will appear here." }}
+            >
+              {() => (
+                <div className="flex flex-col">
+                  {TIMELINE_DATA.map((item, index) => (
+                    <div
+                      key={item.id}
+                      className={`flex items-center justify-between p-3.5 rounded-xl transition-colors cursor-pointer ${
+                        item.active
+                          ? "bg-[#FDF6E2]/60 border border-[#F5C242]/30"
+                          : "hover:bg-neutral-50 border border-transparent"
+                      } ${
+                        index !== TIMELINE_DATA.length - 1 && !item.active
+                          ? "border-b border-b-[#ECEAE4]/50 rounded-none"
+                          : ""
                       }`}
                     >
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          item.badge === "On Schedule"
-                            ? "bg-emerald-600"
-                            : item.badge === "On the way"
-                            ? "bg-amber-500"
-                            : "bg-neutral-400"
-                        }`}
-                      />
-                      {item.badge}
-                    </span>
-                  </div>
+                      <div className="flex items-center gap-6 w-1/3">
+                        <div className="text-sm font-bold text-neutral-900 w-16 shrink-0">
+                          {item.time.split(" ")[0]}{" "}
+                          <span className="text-[10px] text-neutral-400 font-medium">
+                            {item.time.split(" ")[1]}
+                          </span>
+                        </div>
 
-                  <div className="w-1/6 flex items-center justify-end gap-3">
-                    <span className="text-xs font-semibold text-neutral-900">
-                      {item.items}
-                    </span>
-                    <ChevronRight className="w-4 h-4 text-neutral-400" />
-                  </div>
+                        <div className="flex items-center gap-3">
+                          {/* Status Dot indicator */}
+                          <div className="relative flex items-center justify-center">
+                            <div
+                              className={`w-2.5 h-2.5 rounded-full ${
+                                item.badge === "On Schedule"
+                                  ? "bg-emerald-500"
+                                  : item.badge === "On the way"
+                                  ? "bg-amber-500"
+                                  : "bg-neutral-300"
+                              }`}
+                            />
+                            {item.active && (
+                              <div className="absolute w-4 h-4 rounded-full border-2 border-emerald-200 animate-ping" />
+                            )}
+                          </div>
+
+                          <div>
+                            <div className="text-xs font-bold text-neutral-900">
+                              {item.vehicle}
+                            </div>
+                            <div className="text-[10px] text-neutral-400">
+                              {item.destination}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="w-1/4 text-[11px] font-medium text-neutral-500 text-center">
+                        {item.statusText}
+                      </div>
+
+                      <div className="w-1/4 flex justify-center">
+                        <span
+                          className={`text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 ${
+                            item.badge === "On Schedule"
+                              ? "bg-emerald-50 text-emerald-700"
+                              : item.badge === "On the way"
+                              ? "bg-amber-50 text-amber-700"
+                              : "bg-neutral-100 text-neutral-600"
+                          }`}
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              item.badge === "On Schedule"
+                                ? "bg-emerald-600"
+                                : item.badge === "On the way"
+                                ? "bg-amber-500"
+                                : "bg-neutral-400"
+                            }`}
+                          />
+                          {item.badge}
+                        </span>
+                      </div>
+
+                      <div className="w-1/6 flex items-center justify-end gap-3">
+                        <span className="text-xs font-semibold text-neutral-900">
+                          {item.items}
+                        </span>
+                        <ChevronRight className="w-4 h-4 text-neutral-400" />
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              )}
+            </AsyncView>
           </div>
 
           {/* Right Content (4 Cols) */}
@@ -549,6 +515,7 @@ export default function ReceivingPage() {
                   onClick={() => {
                     setIsAckModalOpen(false);
                     setIsModalOpen(false);
+                    reload(); // Refresh the data when confirmed
                   }}
                   className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-bold text-sm rounded-xl transition-all shadow-sm"
                 >

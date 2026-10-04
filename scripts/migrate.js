@@ -44,8 +44,15 @@ try {
   } catch {}
 }
 
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "https://cqkmmmrrhuwitlvwoebq.supabase.co";
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || "";
+const { getPgConfig } = require("./lib/pgConfig");
+
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  console.error("SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_KEY are required.");
+  process.exit(1);
+}
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false }
@@ -135,18 +142,7 @@ async function main() {
   if (Client && (dbPassword || dbUrl)) {
     console.log("\n🔌 3. Attempting direct PostgreSQL connection...");
     try {
-      const config = dbUrl ? {
-        connectionString: dbUrl,
-        ssl: { rejectUnauthorized: false }
-      } : {
-        host: process.env.DB_HOST || "aws-0-ap-northeast-1.pooler.supabase.com",
-        port: parseInt(process.env.DB_PORT || "5432", 10),
-        user: process.env.DB_USER || "postgres.cqkmmmrrhuwitlvwoebq",
-        password: dbPassword,
-        database: process.env.DB_NAME || "postgres",
-        ssl: { rejectUnauthorized: false },
-        connectionTimeoutMillis: 7000
-      };
+      const config = getPgConfig();
 
       pgClient = new Client(config);
       await pgClient.connect();
@@ -196,6 +192,7 @@ async function main() {
       const { error } = await supabase.rpc("exec_sql", { query: sql });
       if (error) {
         console.error(`   ❌ Migration ${file} failed:`, error.message);
+        process.exitCode = 1;
         return;
       }
       console.log(`   ✅ Applied ${file} successfully.`);
@@ -205,6 +202,7 @@ async function main() {
   }
 
   // 6. If neither is configured yet, guide user with exact 1-step solution
+  process.exitCode = 1;
   console.log("\n🔑 To execute migrations directly via `npm run migrate`, choose ONE of these 2 options:\n");
   console.log("👉 Option A (Recommended - Instant Direct DB Connection):");
   console.log("   Add your Supabase database password to `api-backend/.env`:");
@@ -225,4 +223,7 @@ $$;
   `);
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

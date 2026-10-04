@@ -1,88 +1,98 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { ShieldCheck, CheckCircle2, Check, X, AlertTriangle, Thermometer } from "lucide-react";
-import { TripVehicle, ReeferTempCheck } from "../types";
-import { generateSecuritySealTag, checkRefrigerationRequirements } from "../utils/sealAndReefer";
+import { TripVehicle, ReeferTempCheck, ExceptionReasonCode } from "../types";
+import {
+  checkRefrigerationRequirements,
+  evaluateReeferCompliance,
+  isValidSealNumber,
+  CHILLED_RANGE_C,
+  FROZEN_MAX_C,
+} from "../utils/sealAndReefer";
+import { tripProgress } from "../utils/tripQueueHelpers";
+import { errorMessage } from "../utils/errorMessage";
 
 interface SealTruckModalProps {
-  isOpen: boolean;
   onClose: () => void;
   trip: TripVehicle;
   onConfirm: (data: {
     sealNumber: string;
     hasDiscrepancy: boolean;
     discrepancyNote: string;
+    discrepancyReason?: ExceptionReasonCode;
     signature: string;
     tempCheck?: ReeferTempCheck;
   }) => Promise<void>;
-  defaultSignature?: string;
+  defaultSignature: string;
 }
 
+/** Rendered only while open, so every opening starts with a fresh form. */
 export default function SealTruckModal({
-  isOpen,
   onClose,
   trip,
   onConfirm,
-  defaultSignature = "Loader osal (LDR-004)",
+  defaultSignature,
 }: SealTruckModalProps) {
-  // Generate random fresh seal number if not set
   const [securitySeal, setSecuritySeal] = useState("");
-  const [hasDiscrepancy, setHasDiscrepancy] = useState(false);
-  const [discrepancyReason, setDiscrepancyReason] = useState("CARTON_DAMAGED");
+  const [discrepancyToggled, setDiscrepancyToggled] = useState(false);
+  const [discrepancyReason, setDiscrepancyReason] = useState<ExceptionReasonCode>("CARTON_DAMAGED");
   const [discrepancyNote, setDiscrepancyNote] = useState("");
   const [signatureName, setSignatureName] = useState(defaultSignature);
-
-  // Cold-chain temp readings
-  const [chilledTemp, setChilledTemp] = useState("3.8");
-  const [frozenTemp, setFrozenTemp] = useState("-18.2");
+  const [chilledTemp, setChilledTemp] = useState("");
+  const [frozenTemp, setFrozenTemp] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isOpen) {
-      // Auto-generate fresh tamper seal tag via pure utility
-      setSecuritySeal(generateSecuritySealTag());
-      setSignatureName(defaultSignature);
-    }
-  }, [isOpen, defaultSignature]);
 
-  if (!isOpen) return null;
-
+  const { verified: verifiedCount, total: totalCount } = tripProgress(trip);
   const allPallets = trip.stops.flatMap((s) => s.pallets);
-  const verifiedCount = allPallets.filter((p) => p.verified).length;
-  const totalCount = allPallets.length;
-
-  // Evaluate cold-chain requirements via pure utility
   const { hasChilled, hasFrozen, isRefrigerated } = checkRefrigerationRequirements(allPallets);
+
+  // Sealing with unverified pallets is a shortfall and must be reported as a discrepancy
+  const hasShortfall = verifiedCount < totalCount;
+  const hasDiscrepancy = discrepancyToggled || hasShortfall;
+  const effectiveReason: ExceptionReasonCode =
+    hasShortfall && !discrepancyToggled ? "MISSING_FROM_STAGING" : discrepancyReason;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!securitySeal.trim()) return;
+    setFormError(null);
+    if (!isValidSealNumber(securitySeal)) {
+      setFormError("Enter the physical seal tag number (4–32 letters, digits or dashes).");
+      return;
+    }
+    if (!signatureName.trim()) {
+      setFormError("Loader sign-off name is required.");
+      return;
+    }
+
+    const tempCheck = isRefrigerated
+      ? evaluateReeferCompliance({ hasChilled, hasFrozen }, chilledTemp, frozenTemp)
+      : undefined;
+    if (tempCheck && !tempCheck.isCompliant && !hasDiscrepancy) {
+      setFormError("Reefer temperature is out of range. Report a discrepancy to dispatch anyway.");
+      return;
+    }
+
+    const shortfallNote = hasShortfall ? `${totalCount - verifiedCount} of ${totalCount} pallets not verified.` : "";
+    const combinedNote = hasDiscrepancy
+      ? `[${effectiveReason}] ${[shortfallNote, discrepancyNote.trim()].filter(Boolean).join(" ")}`
+      : "";
 
     setIsSubmitting(true);
     try {
-      const combinedDiscrepancyNote = hasDiscrepancy
-        ? `[${discrepancyReason}] ${discrepancyNote.trim()}`
-        : "";
-
-      const tempCheck: ReeferTempCheck | undefined = isRefrigerated
-        ? {
-            chilledTempC: hasChilled ? parseFloat(chilledTemp) : undefined,
-            frozenTempC: hasFrozen ? parseFloat(frozenTemp) : undefined,
-            isCompliant: true,
-          }
-        : undefined;
-
       await onConfirm({
         sealNumber: securitySeal.trim(),
         hasDiscrepancy,
-        discrepancyNote: combinedDiscrepancyNote,
-        signature: signatureName,
+        discrepancyNote: combinedNote,
+        discrepancyReason: hasDiscrepancy ? effectiveReason : undefined,
+        signature: signatureName.trim(),
         tempCheck,
       });
       onClose();
     } catch (err) {
-      console.error("Seal truck error:", err);
+      setFormError(errorMessage(err, "Dispatch failed. Please try again."));
     } finally {
       setIsSubmitting(false);
     }
@@ -161,7 +171,7 @@ export default function SealTruckModal({
                       className="w-full px-3 py-1.5 bg-white border border-blue-200 rounded-lg font-mono font-bold text-xs"
                       required
                     />
-                    <span className="text-[9px] text-blue-600">Req: 0°C to 5°C</span>
+                    <span className="text-[9px] text-blue-600">Req: {CHILLED_RANGE_C.min}°C to {CHILLED_RANGE_C.max}°C</span>
                   </div>
                 )}
                 {hasFrozen && (
@@ -177,7 +187,7 @@ export default function SealTruckModal({
                       className="w-full px-3 py-1.5 bg-white border border-blue-200 rounded-lg font-mono font-bold text-xs"
                       required
                     />
-                    <span className="text-[9px] text-blue-600">Req: ≤ -15°C</span>
+                    <span className="text-[9px] text-blue-600">Req: ≤ {FROZEN_MAX_C}°C</span>
                   </div>
                 )}
               </div>
@@ -188,7 +198,7 @@ export default function SealTruckModal({
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-gray-700 flex items-center justify-between">
               <span>Security Seal Tag</span>
-              <span className="text-[10px] text-amber-600 font-semibold">Auto-generated • Required for Gate</span>
+              <span className="text-[10px] text-amber-600 font-semibold">Required for Gate</span>
             </label>
             <div className="relative">
               <ShieldCheck className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -197,7 +207,7 @@ export default function SealTruckModal({
                 value={securitySeal}
                 onChange={(e) => setSecuritySeal(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-waypoint-yellow"
-                placeholder="e.g. SL-892301-X"
+                placeholder="Enter seal tag number"
                 required
               />
             </div>
@@ -209,7 +219,8 @@ export default function SealTruckModal({
               <label className="text-xs font-bold text-gray-700">Any Discrepancies or Damage?</label>
               <button
                 type="button"
-                onClick={() => setHasDiscrepancy(!hasDiscrepancy)}
+                onClick={() => setDiscrepancyToggled(!discrepancyToggled)}
+                disabled={hasShortfall}
                 className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
                   hasDiscrepancy ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-600"
                 }`}
@@ -218,6 +229,13 @@ export default function SealTruckModal({
               </button>
             </div>
 
+            {hasShortfall && (
+              <p className="text-[11px] font-semibold text-red-700 flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                {totalCount - verifiedCount} pallet(s) not verified – a shortfall exception will be sent to dispatch.
+              </p>
+            )}
+
             {hasDiscrepancy && (
               <div className="space-y-2 bg-red-50/50 border border-red-200 p-3 rounded-2xl">
                 <div>
@@ -225,8 +243,11 @@ export default function SealTruckModal({
                     Exception Reason
                   </label>
                   <select
-                    value={discrepancyReason}
-                    onChange={(e) => setDiscrepancyReason(e.target.value)}
+                    value={effectiveReason}
+                    onChange={(e) => {
+                      setDiscrepancyReason(e.target.value as ExceptionReasonCode);
+                      setDiscrepancyToggled(true);
+                    }}
                     className="w-full p-2 bg-white border border-red-200 rounded-lg text-xs font-bold text-gray-800 focus:outline-none"
                   >
                     <option value="CARTON_DAMAGED">Carton Damaged / Packaging Crushed</option>
@@ -243,7 +264,7 @@ export default function SealTruckModal({
                   value={discrepancyNote}
                   onChange={(e) => setDiscrepancyNote(e.target.value)}
                   className="w-full p-2.5 bg-white border border-red-200 rounded-xl text-xs font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-red-400"
-                  required={hasDiscrepancy}
+                  required={discrepancyToggled}
                 />
               </div>
             )}
@@ -259,7 +280,9 @@ export default function SealTruckModal({
                   type="text"
                   value={signatureName}
                   onChange={(e) => setSignatureName(e.target.value)}
+                  placeholder="Your name"
                   className="text-[10px] text-amber-900 bg-transparent font-medium border-b border-amber-300 focus:outline-none"
+                  required
                 />
               </div>
             </div>
@@ -267,6 +290,12 @@ export default function SealTruckModal({
               {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </span>
           </div>
+
+          {formError && (
+            <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-xl p-2.5">
+              {formError}
+            </p>
+          )}
 
           {/* Modal Buttons */}
           <div className="flex items-center gap-3 pt-2">
