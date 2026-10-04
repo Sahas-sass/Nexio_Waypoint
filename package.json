@@ -6,5 +6,9 @@
     "migrate": "node ./scripts/migrate.js",
     "seed": "node ./scripts/seed.js",
     "db:manage": "node ./scripts/db.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
+    "pg": "^8.23.1"
   }
 }
