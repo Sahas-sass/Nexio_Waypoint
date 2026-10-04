@@ -69,22 +69,14 @@ export async function recordUserActivity(
     // Prepend new activity and limit to latest 10
     const updatedActivities = [newActivity, ...existingActivities].slice(0, 10);
 
-    // Call update API or Supabase client
+    // Saved through the validated server route; the caller can only ever update their own row
     const res = await fetch("/profile/update", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId,
-        activities: updatedActivities,
-      }),
+      body: JSON.stringify({ activities: updatedActivities }),
     });
-
     if (!res.ok) {
-      // Fallback to direct client update if API endpoint returns error
-      await supabase
-        .from("profiles")
-        .update({ activities: updatedActivities })
-        .eq("id", userId);
+      console.warn("Could not log user activity:", res.status);
     }
   } catch (err) {
     console.warn("Could not log user activity in background:", err);

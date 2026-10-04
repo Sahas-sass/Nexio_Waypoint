@@ -18,7 +18,7 @@ export function useTripLifecycle() {
 
   useEffect(() => {
     if (!userId || !tripId) return;
-    locationService.start(userId, tripId).catch((error) => console.warn('[location] tracking unavailable', error));
+    locationService.start(tripId).catch((error) => console.warn('[location] tracking unavailable', error));
     return () => locationService.stop();
   }, [userId, tripId]);
 }

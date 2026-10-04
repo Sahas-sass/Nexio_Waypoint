@@ -9,7 +9,7 @@ import { API_URL } from '@/lib/apiConfig';
 import { supabase } from '@/lib/supabaseClient';
 
 import { useLocationStore } from './locationStore';
-import { isDue } from './throttle';
+import { isDue, nonNegativeOrUndefined } from './throttle';
 
 const ONLINE_INTERVAL_MS = 30_000;
 const OFFLINE_INTERVAL_MS = 120_000;
@@ -23,18 +23,23 @@ class LocationService {
   private socket: Socket | null = null;
   private subscription: Location.LocationSubscription | null = null;
   private tripId: string | null = null;
-  private driverId: string | null = null;
   private lastSentAt: number | null = null;
 
-  async start(driverId: string, tripId: string) {
+  async start(tripId: string) {
     if (this.subscription && this.tripId === tripId) return;
     this.stop();
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') return;
 
-    this.driverId = driverId;
     this.tripId = tripId;
-    this.socket = io(API_URL, { reconnection: true, transports: ['websocket'] });
+    // api-backend authenticates the socket with the driver's Supabase access token
+    this.socket = io(API_URL, {
+      reconnection: true,
+      transports: ['websocket'],
+      auth: (cb) => {
+        supabase.auth.getSession().then(({ data }) => cb({ token: data.session?.access_token ?? '' }));
+      },
+    });
     this.subscription = await Location.watchPositionAsync(
       { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 10 },
       (location) => this.handle(location)
@@ -47,7 +52,6 @@ class LocationService {
     this.socket?.disconnect();
     this.socket = null;
     this.tripId = null;
-    this.driverId = null;
     this.lastSentAt = null;
   }
 
@@ -58,13 +62,13 @@ class LocationService {
 
     if (this.socket?.connected) {
       this.socket.emit('driver_location_update', {
-        driverId: this.driverId,
         tripId: this.tripId,
         lat: latitude,
         lng: longitude,
         timestamp: location.timestamp,
-        speed: location.coords.speed,
-        heading: location.coords.heading,
+        // Devices report -1 / null when speed or heading is unknown
+        speed: nonNegativeOrUndefined(location.coords.speed),
+        heading: nonNegativeOrUndefined(location.coords.heading),
       });
     }
 
