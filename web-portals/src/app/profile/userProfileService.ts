@@ -58,7 +58,7 @@ export async function fetchRecentUserActivities(
       if (!error && logs && logs.length > 0) {
         return logs.map((log) => ({
           title: `Dispatched ${log.trip_number} (${log.plate_number})`,
-          meta: `${log.total_pallets} pallets • Seal ${log.seal_number || "Verified"}`,
+          meta: `${log.total_pallets} pallets • ${log.seal_number ? `Seal ${log.seal_number}` : "No seal recorded"}`,
           time: formatRelativeTime(log.dispatched_at || log.created_at),
           type: log.has_discrepancy ? "check" : "truck",
         }));

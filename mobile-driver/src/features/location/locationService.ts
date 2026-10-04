@@ -33,13 +33,13 @@ class LocationService {
 
     this.tripId = tripId;
     // api-backend authenticates the socket with the driver's Supabase access token
-    this.socket = io(API_URL, {
+    this.socket = API_URL ? io(API_URL, {
       reconnection: true,
       transports: ['websocket'],
       auth: (cb) => {
         supabase.auth.getSession().then(({ data }) => cb({ token: data.session?.access_token ?? '' }));
       },
-    });
+    }) : null;
     this.subscription = await Location.watchPositionAsync(
       { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 10 },
       (location) => this.handle(location)

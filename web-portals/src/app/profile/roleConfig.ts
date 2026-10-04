@@ -31,9 +31,9 @@ export const ROLE_CONFIGS: Record<string, RoleUIConfig> = {
     defaultDepartment: "Dock Operations",
     defaultEmployeeIdPrefix: "LDR",
     getLocationDisplay: (profile) =>
-      profile?.assignedBay || profile?.station || "Bay 04",
+      profile?.assignedBay || profile?.station || "Not assigned",
     getMetaDisplay: (profile) =>
-      profile?.assignedMeta || (profile?.shift ? `Shift: ${profile.shift}` : "Morning Shift (06:00 - 14:00)"),
+      profile?.assignedMeta || (profile?.shift ? `Shift: ${profile.shift}` : "Not set"),
   },
   dispatcher: {
     role: "dispatcher",
@@ -48,9 +48,9 @@ export const ROLE_CONFIGS: Record<string, RoleUIConfig> = {
     defaultDepartment: "Logistics Operations",
     defaultEmployeeIdPrefix: "DISP",
     getLocationDisplay: (profile) =>
-      profile?.outlet || "Central Logistics Hub",
+      profile?.outlet || "Not assigned",
     getMetaDisplay: (profile) =>
-      profile?.assignedMeta || (profile?.shift ? `Shift: ${profile.shift}` : "Day Shift Operations"),
+      profile?.assignedMeta || (profile?.shift ? `Shift: ${profile.shift}` : "Not set"),
   },
   store_manager: {
     role: "store_manager",
@@ -65,9 +65,9 @@ export const ROLE_CONFIGS: Record<string, RoleUIConfig> = {
     defaultDepartment: "Retail Operations",
     defaultEmployeeIdPrefix: "SM",
     getLocationDisplay: (profile) =>
-      profile?.outlet || "Fresh Store 22 (F-042)",
+      profile?.outlet || "Not assigned",
     getMetaDisplay: (profile) =>
-      profile?.assignedMeta || "Store hours: 06:00 - 18:00",
+      profile?.assignedMeta || "Not set",
   },
   driver: {
     role: "driver",
@@ -82,9 +82,9 @@ export const ROLE_CONFIGS: Record<string, RoleUIConfig> = {
     defaultDepartment: "Fleet Operations",
     defaultEmployeeIdPrefix: "DRV",
     getLocationDisplay: (profile) =>
-      profile?.assignedBay || profile?.outlet || "Fleet Bay 04",
+      profile?.assignedBay || profile?.outlet || "Not assigned",
     getMetaDisplay: (profile) =>
-      profile?.assignedMeta || (profile?.shift ? `Shift: ${profile.shift}` : "Route Run"),
+      profile?.assignedMeta || (profile?.shift ? `Shift: ${profile.shift}` : "Not set"),
   },
   admin: {
     role: "admin",
@@ -118,7 +118,7 @@ export function getRoleConfig(role?: string | null): RoleUIConfig {
     assignedLabel: "ASSIGNED SCOPE",
     defaultDepartment: "Operations",
     defaultEmployeeIdPrefix: "WP",
-    getLocationDisplay: (p) => p?.outlet || p?.assignedBay || "Assigned Location",
-    getMetaDisplay: (p) => p?.assignedMeta || p?.shift || "Standard Schedule",
+    getLocationDisplay: (p) => p?.outlet || p?.assignedBay || "Not assigned",
+    getMetaDisplay: (p) => p?.assignedMeta || p?.shift || "Not set",
   };
 }
