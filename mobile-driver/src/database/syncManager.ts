@@ -187,15 +187,7 @@ export async function downloadTripData(): Promise<void> {
 
     console.log(`[SyncManager] Downloaded ${stops?.length ?? 0} trip stops from Supabase.`);
 
-    // 1. Drop local tables to ensure the latest schema is applied (fixes cached WebSQL schemas missing columns)
-    db.execSync('DROP TABLE IF EXISTS stops;');
-    db.execSync('DROP TABLE IF EXISTS store_managers;');
-    
-    // Re-initialize tables with the guaranteed fresh schema
-    const { initDatabase } = require('./schema');
-    initDatabase();
-    
-    // Clear the dummy seeds that initDatabase might have added
+    // 1. Clear local tables
     db.execSync('DELETE FROM stops;');
     db.execSync('DELETE FROM store_managers;');
 
@@ -207,12 +199,9 @@ export async function downloadTripData(): Promise<void> {
       );
       try {
         for (const stop of stops) {
-          // Bulletproof: handle Supabase returning an array or object
-          const storeObj = Array.isArray(stop.stores) ? stop.stores[0] : stop.stores;
-          const mgr = storeObj ? (Array.isArray(storeObj.store_managers) ? storeObj.store_managers[0] : storeObj.store_managers) : null;
-          
+          const mgr = stop.stores?.store_managers;
           if (mgr && mgr.id && !insertedManagerIds.has(mgr.id)) {
-            insertManager.executeSync([mgr.id, mgr.name ?? 'Unknown', mgr.phone ?? '']);
+            insertManager.executeSync([mgr.id, mgr.name, mgr.phone]);
             insertedManagerIds.add(mgr.id);
             console.log(`[SyncManager] Inserted manager: ${mgr.name} (${mgr.id})`);
           }
@@ -235,18 +224,16 @@ export async function downloadTripData(): Promise<void> {
 
       try {
         for (const stop of stops) {
-          // Bulletproof extraction
-          const storeObj = Array.isArray(stop.stores) ? stop.stores[0] : stop.stores;
-          const storeName = storeObj?.name ?? stop.store_name ?? 'Unknown Store';
-          const storeAddress = storeObj?.address ?? stop.address ?? '';
-          const managerId = storeObj?.manager_id ?? stop.manager_id ?? null;
-          const stopNumber = stop.stop_sequence ?? stop.stop_number ?? 0;
+          // Pull store details from the nested join
+          const storeName = stop.stores?.name ?? stop.store_name ?? 'Unknown Store';
+          const storeAddress = stop.stores?.address ?? stop.address ?? '';
+          const managerId = stop.stores?.manager_id ?? stop.manager_id ?? null;
 
-          console.log(`[SyncManager] Stop #${stopNumber} "${storeName}" → manager_id: ${managerId}`);
+          console.log(`[SyncManager] Stop #${stop.stop_number} "${storeName}" → manager_id: ${managerId}`);
 
           insertStop.executeSync([
-            stop.id ?? null,
-            stopNumber,
+            stop.id,
+            stop.stop_number,
             storeName,
             storeAddress,
             stop.window ?? '',
