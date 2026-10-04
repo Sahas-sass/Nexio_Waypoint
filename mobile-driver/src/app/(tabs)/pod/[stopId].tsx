@@ -1,5 +1,5 @@
-import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     Alert,
     Modal,
@@ -68,6 +68,22 @@ export default function PodScreen() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showCelebration, setShowCelebration] = useState(false);
 
+    // Reset all form states whenever a new stop is opened or the screen comes into focus
+    useFocusEffect(
+        useCallback(() => {
+            setIsSubmitting(false);
+        }, [])
+    );
+
+    useEffect(() => {
+        setIsSubmitting(false);
+        setSignatureData(null);
+        setPhotoUri(null);
+        setChecklistConfirmed(true);
+        setNote('Goods received and checked by store manager.');
+        setShowCelebration(false);
+    }, [stop?.id, stopId]);
+
     // Resolved stop attributes
     const stopNumberStr = stop ? String(stop.stop_number).padStart(2, '0') : '02';
     const storeName = stop?.store_name ?? 'Fresh Store #22';
@@ -121,6 +137,11 @@ export default function PodScreen() {
                 "SELECT id FROM stops WHERE status = 'PENDING' ORDER BY stop_number ASC LIMIT 1;"
             );
 
+            // Reset form state so the screen is clean for the next stop
+            setIsSubmitting(false);
+            setSignatureData(null);
+            setPhotoUri(null);
+
             // Navigate directly to the delivery complete and next stop handover screen
             router.replace({
                 pathname: '/pod/complete',
@@ -133,6 +154,8 @@ export default function PodScreen() {
             console.error('[PodScreen] Error saving PoD:', err);
             setIsSubmitting(false);
             Alert.alert('Error', 'Failed to save delivery record. Please try again.');
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -234,6 +257,7 @@ export default function PodScreen() {
             {/* Step 2: Store Manager Signature */}
             <View style={styles.stepSection}>
                 <SignaturePad
+                    key={`sig-${stop?.id ?? stopId ?? '0'}`}
                     onConfirm={(svg) => setSignatureData(svg)}
                     isConfirmed={Boolean(signatureData)}
                 />
@@ -242,6 +266,7 @@ export default function PodScreen() {
             {/* Step 3: Delivery Photo */}
             <View style={styles.stepSection}>
                 <CameraCapture
+                    key={`cam-${stop?.id ?? stopId ?? '0'}`}
                     onCapture={(uri) => setPhotoUri(uri)}
                     imageUri={photoUri}
                 />
