@@ -1,20 +1,19 @@
-// Offline mode and sync status.
+// Connectivity and the real sync queue (outbox) for this device.
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppHeader, Screen } from '@/components/waypoint/chrome';
 import { Icon } from '@/components/waypoint/icon';
 import { Button, IconTile, Label, PageTitle, SectionHeading, WText } from '@/components/waypoint/ui';
-import { syncQueue } from '@/data/mock';
+import { useSyncStore } from '@/features/sync/store/syncStore';
+import { outboxItems } from '@/features/sync/utils/outboxView';
+import { useTrip } from '@/features/trip/hooks/useTrip';
+import { syncAndReload } from '@/features/trip/services/tripController';
+import { formatTimestamp, padStop } from '@/utils/formatters';
 import { Radius, Shadow, W } from '@/utils/theme';
 
 const keepWorking = [
@@ -27,36 +26,46 @@ const keepWorking = [
 
 export default function OfflineScreen() {
   const insets = useSafeAreaInsets();
-  const [restored, setRestored] = useState(false);
+  const isOnline = useSyncStore((s) => s.isOnline);
+  const outbox = useSyncStore((s) => s.outbox);
+  const pendingCount = useSyncStore((s) => s.pendingCount);
+  const syncing = useSyncStore((s) => s.syncing);
+  const lastSyncedAt = useSyncStore((s) => s.lastSyncedAt);
+  const { stops } = useTrip();
 
-  useEffect(() => {
-    if (!restored) return;
-    const timer = setTimeout(() => router.navigate('/route'), 1800);
-    return () => clearTimeout(timer);
-  }, [restored]);
+  const items = useMemo(
+    () =>
+      outboxItems(outbox, (stopId) => {
+        const stop = stops.find((s) => s.id === stopId);
+        return stop ? `Stop ${padStop(stop.sequence)} ${stop.storeName}` : null;
+      }),
+    [outbox, stops]
+  );
 
-  const tone = restored ? W.greenDark : W.offlineText;
+  const tone = isOnline ? W.greenDark : W.offlineText;
+  const lastSynced = formatTimestamp(lastSyncedAt);
 
   return (
     <View style={{ flex: 1, backgroundColor: W.offWhite }}>
-      <AppHeader online={restored} onStatus={() => router.back()} />
+      <AppHeader onStatus={() => router.back()} />
       <Screen
         contentStyle={{ paddingBottom: 28 + insets.bottom }}
         background={
-          <LinearGradient
-            colors={[restored ? W.greenSoft : W.orangeSoft, W.offWhite]}
-            style={styles.backdrop}
-          />
+          <LinearGradient colors={[isOnline ? W.greenSoft : W.orangeSoft, W.offWhite]} style={styles.backdrop} />
         }>
         <View style={styles.hero}>
-          <View style={[styles.heroIcon, restored && { backgroundColor: W.green }]}>
-            <Icon name={restored ? 'check' : 'wifiOff'} size={30} color={W.white} />
+          <View style={[styles.heroIcon, isOnline && { backgroundColor: W.green }]}>
+            <Icon name={isOnline ? 'cloud' : 'wifiOff'} size={30} color={W.white} />
           </View>
           <View style={{ flex: 1 }}>
-            <PageTitle>{restored ? 'Connection Restored' : "You're Offline"}</PageTitle>
+            <PageTitle>{isOnline ? 'Online' : "You're Offline"}</PageTitle>
             <WText size={10} color={W.gray} style={styles.heroText}>
-              {restored
-                ? 'Syncing your delivery records…'
+              {isOnline
+                ? syncing
+                  ? 'Syncing your delivery records…'
+                  : pendingCount > 0
+                    ? 'Some records are still waiting to sync.'
+                    : 'All delivery records are synchronized.'
                 : 'Your delivery data is being saved securely on this device.'}
             </WText>
           </View>
@@ -65,110 +74,103 @@ export default function OfflineScreen() {
         <View style={styles.statusCard}>
           <View style={styles.rowBetween}>
             <Label size={9} spacing={0.11}>
-              OFFLINE MODE
+              SYNC STATUS
             </Label>
-            <View style={[styles.tag, { backgroundColor: restored ? W.greenSoft : W.orangeSoft }]}>
+            <View style={[styles.tag, { backgroundColor: isOnline ? W.greenSoft : W.orangeSoft }]}>
               <WText size={9} weight={800} color={tone}>
-                {restored ? 'Connected' : 'Working locally'}
+                {isOnline ? 'Connected' : 'Working locally'}
               </WText>
             </View>
           </View>
           <View style={styles.connection}>
             <IconTile
-              icon={restored ? 'cloud' : 'wifiOff'}
+              icon={isOnline ? 'cloud' : 'wifiOff'}
               size={45}
               iconSize={25}
               radius={14}
-              background={restored ? W.greenSoft : W.orangeSoft}
+              background={isOnline ? W.greenSoft : W.orangeSoft}
               color={tone}
             />
             <View>
               <Label spacing={0.09}>CONNECTION</Label>
               <WText size={12} weight={700} style={{ marginTop: 3 }}>
-                {restored ? 'Internet restored' : 'No Internet Connection'}
+                {isOnline ? 'Internet available' : 'No Internet Connection'}
               </WText>
             </View>
           </View>
           <View style={styles.stats}>
             <View style={{ flex: 1 }}>
-              <Label spacing={0.09}>LOCAL DATA</Label>
-              <View style={[styles.inline, { marginTop: 4 }]}>
-                <Icon name="check" size={15} color={W.greenDark} />
-                <WText size={11} weight={700} color={W.greenDark}>
-                  Saved
-                </WText>
-              </View>
+              <Label spacing={0.09}>LAST SYNC</Label>
+              <WText size={11} weight={700} style={{ marginTop: 4 }}>
+                {lastSynced ?? 'Not yet this session'}
+              </WText>
             </View>
             <View style={styles.statRight}>
               <Label spacing={0.09}>PENDING SYNC</Label>
               <WText size={11} weight={700} style={{ marginTop: 4 }}>
-                {restored ? '0 records' : `${syncQueue.length} records`}
+                {pendingCount} {pendingCount === 1 ? 'record' : 'records'}
               </WText>
             </View>
           </View>
-          {restored && <SyncProgress total={syncQueue.length} />}
         </View>
 
-        {restored ? (
-          <View style={styles.success}>
-            <View style={styles.successRing}>
-              <Icon name="check" size={36} color={W.white} />
-            </View>
-            <PageTitle>All records synchronized</PageTitle>
-            <WText size={11} color={W.gray} style={{ marginTop: 10 }}>
-              Your dispatcher has the latest delivery data.
+        {!isOnline && (
+          <View style={styles.continueCard}>
+            <SectionHeading title="You can keep working" />
+            <WText size={10} color={W.gray} style={styles.continueText}>
+              Everything stays available and will sync automatically when you&apos;re back online.
             </WText>
-          </View>
-        ) : (
-          <>
-            <View style={styles.continueCard}>
-              <SectionHeading title="You can keep working" />
-              <WText size={10} color={W.gray} style={styles.continueText}>
-                Everything stays available and will sync automatically when you&apos;re back online.
-              </WText>
-              <View style={{ gap: 9 }}>
-                {keepWorking.map((item) => (
-                  <View key={item} style={[styles.inline, { gap: 8 }]}>
-                    <IconTile icon="check" size={21} iconSize={14} radius={7} background={W.greenSoft} color={W.greenDark} />
-                    <WText size={10} weight={700}>
-                      {item}
-                    </WText>
-                  </View>
-                ))}
-              </View>
-            </View>
-
-            <View style={{ marginBottom: 15 }}>
-              <SectionHeading
-                title="Waiting to sync"
-                meta={
-                  <View style={[styles.inline, { gap: 5 }]}>
-                    <PulseDot />
-                    <WText size={10} weight={700} color={W.offlineText}>
-                      Waiting for connection
-                    </WText>
-                  </View>
-                }
-              />
-              {syncQueue.map((item) => (
-                <View key={item.name} style={styles.queueItem}>
-                  <IconTile icon="cloud" size={37} iconSize={18} background={W.yellowSoft} color={W.offlineText} />
-                  <View style={{ flex: 1 }}>
-                    <WText size={10} weight={700}>
-                      {item.name}
-                    </WText>
-                    <WText size={8} color={W.gray} style={{ marginTop: 3 }}>
-                      Saved securely on device
-                    </WText>
-                  </View>
-                  <WText size={8} color={W.gray}>
-                    {item.time}
+            <View style={{ gap: 9 }}>
+              {keepWorking.map((item) => (
+                <View key={item} style={[styles.inline, { gap: 8 }]}>
+                  <IconTile icon="check" size={21} iconSize={14} radius={7} background={W.greenSoft} color={W.greenDark} />
+                  <WText size={10} weight={700}>
+                    {item}
                   </WText>
                 </View>
               ))}
             </View>
-          </>
+          </View>
         )}
+
+        <View style={{ marginBottom: 15 }}>
+          <SectionHeading
+            title="Waiting to sync"
+            meta={
+              items.length > 0 ? (
+                <View style={[styles.inline, { gap: 5 }]}>
+                  <PulseDot />
+                  <WText size={10} weight={700} color={W.offlineText}>
+                    {isOnline ? (syncing ? 'Syncing' : 'Retrying') : 'Waiting for connection'}
+                  </WText>
+                </View>
+              ) : undefined
+            }
+          />
+          {items.length === 0 && (
+            <WText size={10} color={W.gray}>
+              Nothing waiting – every record is on the server.
+            </WText>
+          )}
+          {items.map((item) => (
+            <View key={item.id} style={styles.queueItem}>
+              <IconTile icon="cloud" size={37} iconSize={18} background={W.yellowSoft} color={W.offlineText} />
+              <View style={{ flex: 1 }}>
+                <WText size={10} weight={700}>
+                  {item.title}
+                </WText>
+                <WText size={8} color={item.error && isOnline ? W.offlineText : W.gray} style={{ marginTop: 3 }}>
+                  {item.error && isOnline ? `Last attempt failed: ${item.error}` : 'Saved securely on device'}
+                </WText>
+              </View>
+              {item.time && (
+                <WText size={8} color={W.gray}>
+                  {item.time}
+                </WText>
+              )}
+            </View>
+          ))}
+        </View>
 
         <View style={styles.protected}>
           <Icon name="shield" color="#6c7780" />
@@ -181,9 +183,9 @@ export default function OfflineScreen() {
             </WText>
           </View>
         </View>
-        {!restored && (
-          <Button variant="secondary" onPress={() => setRestored(true)}>
-            Simulate Connection Restored
+        {isOnline && items.length > 0 && (
+          <Button variant="secondary" disabled={syncing} onPress={() => void syncAndReload()}>
+            {syncing ? 'Syncing…' : 'Sync now'}
           </Button>
         )}
       </Screen>
@@ -198,29 +200,6 @@ function PulseDot() {
   }, [opacity]);
   const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
   return <Animated.View style={[styles.pulseDot, style]} />;
-}
-
-function SyncProgress({ total }: { total: number }) {
-  const progress = useSharedValue(0);
-  useEffect(() => {
-    progress.value = withTiming(1, { duration: 1200 });
-  }, [progress]);
-  const style = useAnimatedStyle(() => ({ width: `${progress.value * 100}%` }));
-  return (
-    <View style={{ marginTop: 14 }}>
-      <View style={styles.rowBetween}>
-        <WText size={9} color={W.gray}>
-          Sync complete
-        </WText>
-        <WText size={9} weight={700} color={W.greenDark}>
-          {total} / {total} synced
-        </WText>
-      </View>
-      <View style={styles.track}>
-        <Animated.View style={[styles.trackFill, style]} />
-      </View>
-    </View>
-  );
 }
 
 const styles = StyleSheet.create({
@@ -294,32 +273,6 @@ const styles = StyleSheet.create({
     borderLeftWidth: 1,
     borderLeftColor: W.lightGray,
     paddingLeft: 16,
-  },
-  track: {
-    height: 7,
-    backgroundColor: '#e7ebe7',
-    borderRadius: 99,
-    marginTop: 7,
-    overflow: 'hidden',
-  },
-  trackFill: {
-    height: '100%',
-    backgroundColor: W.green,
-  },
-  success: {
-    alignItems: 'center',
-    paddingTop: 34,
-    paddingBottom: 24,
-  },
-  successRing: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: W.green,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-    boxShadow: `0px 0px 0px 10px ${W.greenSoft}`,
   },
   continueCard: {
     padding: 15,

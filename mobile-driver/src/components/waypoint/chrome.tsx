@@ -14,24 +14,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, type IconName } from '@/components/waypoint/icon';
 import { StatusDot, WText } from '@/components/waypoint/ui';
-import { driver } from '@/data/mock';
-import { useQueueStore } from '@/store/queueStore';
+import { useSyncStore } from '@/features/sync/store/syncStore';
+import { useTrip } from '@/features/trip/hooks/useTrip';
+import { formatDateParts, initials } from '@/utils/formatters';
 import { W } from '@/utils/theme';
-
-export function getFormattedHeaderDate(): string {
-  const now = new Date();
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const months = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ];
-
-  const dayName = days[now.getDay()];
-  const dateNumber = now.getDate();
-  const monthName = months[now.getMonth()];
-
-  return `${dayName}, ${dateNumber} ${monthName}`;
-}
 
 export function AppHeader({
   online,
@@ -40,11 +26,13 @@ export function AppHeader({
   online?: boolean;
   onStatus: () => void;
 }) {
-  const storeOnline = useQueueStore((state) => state.isOnline);
+  const storeOnline = useSyncStore((state) => state.isOnline);
+  const { driver } = useTrip();
+  const driverInitials = initials(driver?.fullName);
   const isOnline = online !== undefined ? online : storeOnline;
   const insets = useSafeAreaInsets();
   const statusColor = isOnline ? W.greenDark : '#a85d00';
-  const currentDate = getFormattedHeaderDate();
+  const currentDate = formatDateParts().fullDate;
 
   return (
     <View style={[styles.header, { paddingTop: insets.top + 12, height: insets.top + 72 }]}>
@@ -53,12 +41,18 @@ export function AppHeader({
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.avatar}>
-        <Icon name="user" size={18} />
-        <View style={styles.avatarDot} />
+        {driverInitials ? (
+          <WText size={13} weight={800}>
+            {driverInitials}
+          </WText>
+        ) : (
+          <Icon name="user" size={18} />
+        )}
+        <View style={[styles.avatarDot, { backgroundColor: isOnline ? W.green : '#a85d00' }]} />
       </LinearGradient>
       <View style={{ flex: 1, alignItems: 'center' }}>
-        <WText size={14} weight={800}>
-          Today&apos;s Route
+        <WText size={14} weight={800} numberOfLines={1}>
+          {driver?.fullName ?? 'Today\'s Route'}
         </WText>
         <WText size={10} weight={600} color={W.gray} style={{ marginTop: 2 }}>
           {currentDate}
@@ -87,7 +81,7 @@ const navItems: { name: string; label: string; icon: IconName }[] = [
 
 function activeTab(routeName: string) {
   // Proof of delivery and completion belong to the current stop flow.
-  if (routeName.startsWith('pod/') || routeName.startsWith('complete/')) return 'current-stop';
+  if (routeName.startsWith('pod/')) return 'current-stop';
   return routeName;
 }
 

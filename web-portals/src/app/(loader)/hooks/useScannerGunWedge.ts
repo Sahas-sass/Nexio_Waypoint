@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { playScannerSound, triggerHapticFeedback } from "../utils/scannerFeedback";
 
 interface UseScannerGunWedgeOptions {
   onScan: (barcode: string) => void;
@@ -39,8 +38,6 @@ export function useScannerGunWedge({
         if (keyBufferRef.current.length >= minBarcodeLength) {
           const barcode = keyBufferRef.current.trim();
           keyBufferRef.current = "";
-          playScannerSound("success");
-          triggerHapticFeedback([100]);
           onScan(barcode);
         }
         keyBufferRef.current = "";

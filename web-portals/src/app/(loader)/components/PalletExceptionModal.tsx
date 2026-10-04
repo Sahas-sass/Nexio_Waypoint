@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, X, Check, Package } from "lucide-react";
-import { PalletItem, TripVehicle } from "../types";
+import { AlertTriangle, X, Check } from "lucide-react";
+import { PalletItem, TripVehicle, ExceptionReasonCode } from "../types";
+import { errorMessage } from "../utils/errorMessage";
 
 interface PalletExceptionModalProps {
   isOpen: boolean;
@@ -13,7 +14,7 @@ interface PalletExceptionModalProps {
     palletSku?: string;
     orderId?: string;
     storeId?: string;
-    reasonCode: "CARTON_DAMAGED" | "LEAKAGE_DETECTED" | "TEMPERATURE_EXCURSION" | "MISSING_FROM_STAGING" | "OTHER";
+    reasonCode: ExceptionReasonCode;
     notes: string;
   }) => Promise<void>;
 }
@@ -25,9 +26,8 @@ export default function PalletExceptionModal({
   trip,
   onSubmitException,
 }: PalletExceptionModalProps) {
-  const [reasonCode, setReasonCode] = useState<
-    "CARTON_DAMAGED" | "LEAKAGE_DETECTED" | "TEMPERATURE_EXCURSION" | "MISSING_FROM_STAGING" | "OTHER"
-  >("CARTON_DAMAGED");
+  const [reasonCode, setReasonCode] = useState<ExceptionReasonCode>("CARTON_DAMAGED");
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -43,6 +43,7 @@ export default function PalletExceptionModal({
     if (!notes.trim()) return;
 
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
       await onSubmitException({
         palletSku: pallet?.sku,
@@ -51,9 +52,10 @@ export default function PalletExceptionModal({
         reasonCode,
         notes: notes.trim(),
       });
+      setNotes("");
       onClose();
     } catch (err) {
-      console.error("Submit exception error:", err);
+      setSubmitError(errorMessage(err, "Failed to log exception"));
     } finally {
       setIsSubmitting(false);
     }
@@ -89,7 +91,7 @@ export default function PalletExceptionModal({
           <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs">
             <span className="text-[10px] font-bold text-gray-400 uppercase block">Delivery Target</span>
             <span className="font-bold text-gray-800 block mt-0.5">
-              {relatedStop?.storeName} ({relatedStop?.storeId})
+              {relatedStop ? `${relatedStop.storeName} (${relatedStop.storeId})` : "No delivery stop on this trip"}
             </span>
           </div>
 
@@ -98,7 +100,7 @@ export default function PalletExceptionModal({
             <label className="text-xs font-bold text-gray-700 block">Exception Reason</label>
             <select
               value={reasonCode}
-              onChange={(e) => setReasonCode(e.target.value as any)}
+              onChange={(e) => setReasonCode(e.target.value as ExceptionReasonCode)}
               className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-red-400"
             >
               <option value="CARTON_DAMAGED">Crushed Box / Torn Carton</option>
@@ -121,6 +123,12 @@ export default function PalletExceptionModal({
               required
             />
           </div>
+
+          {submitError && (
+            <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-xl p-2.5">
+              {submitError}
+            </p>
+          )}
 
           {/* Action Buttons */}
           <div className="flex items-center gap-2.5 pt-2">

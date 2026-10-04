@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { Plus, Minus, Layers } from "lucide-react";
+import { Plus, Minus } from "lucide-react";
 import { LiveTrackingVehicle } from "@/app/(dispatcher)/services/types";
-import { CENTRAL_DEPOT } from "@/app/(dispatcher)/services/dispatcherService";
+import { DEPOT as CENTRAL_DEPOT } from "@/app/(dispatcher)/utils/constants";
 
 interface RealTrackingMapProps {
   vehicles: LiveTrackingVehicle[];

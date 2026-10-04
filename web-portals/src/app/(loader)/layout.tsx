@@ -1,29 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Bell } from "lucide-react";
 import UserProfileDropdown from "@/app/profile/UserProfileDropdown";
 import LoaderBottomDock from "./LoaderBottomDock";
-import { createBrowserClient } from "@supabase/ssr";
 
 export default function LoaderLayout({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
-
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
-  );
-
-  const handleLogout = async () => {
-    try {
-      await supabase.auth.signOut();
-    } catch {
-      // ignore
-    }
-    router.push("/login");
-  };
-
   return (
     <div className="min-h-screen bg-waypoint-bg flex flex-col font-sans">
       {/* Tablet Top Status / App Header */}
@@ -44,14 +25,8 @@ export default function LoaderLayout({ children }: { children: React.ReactNode }
           </Link>
         </div>
 
-        {/* Right: Notification Bell & Loader Profile */}
+        {/* Right: Loader Profile */}
         <div className="flex items-center gap-3">
-          {/* Notification Bell */}
-          <button className="relative p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-xl transition-colors">
-            <Bell className="w-4.5 h-4.5" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-waypoint-orange rounded-full border border-white" />
-          </button>
-
           {/* User Profile Dropdown */}
           <UserProfileDropdown layoutVariant="header" />
         </div>

@@ -1,15 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { createBrowserClient } from "@supabase/ssr";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, Eye, ArrowRight } from "lucide-react";
-
-// Initialize Supabase Client
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { supabase } from "@/lib/supabaseClient";
+import { getRoleDashboard, hasPortal } from "@/lib/auth/roleRoutes";
 
 // Dynamic Content Configuration
 const roleContent = {
@@ -52,29 +47,33 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
-    if (error) {
-      setError(error.message);
+    if (error || !data.user) {
+      setError(error?.message ?? "Sign in failed");
       setLoading(false);
-    } else {
-      const destination = activeRole === "loader" 
-        ? "/trip-queue" 
-        : activeRole === "manager" 
-        ? "/overview" 
-        : "/command-center";
-      router.push(destination);
-      router.refresh();
+      return;
     }
+
+    // Route by the role stored in the database, not by the selected tab
+    const { data: profile } = await supabase.from("profiles").select("role").eq("id", data.user.id).maybeSingle();
+    if (!hasPortal(profile?.role)) {
+      await supabase.auth.signOut();
+      setError("This account has no web portal access. Drivers sign in with the mobile app.");
+      setLoading(false);
+      return;
+    }
+    router.push(getRoleDashboard(profile?.role));
+    router.refresh();
   };
 
   const handleRoleSelect = (role: RoleKey) => {
     setActiveRole(role);
     setEmail(roleContent[role].email);
-    setPassword("Waypoint@2026");
+    setPassword("");
     setError("");
   };
 

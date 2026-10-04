@@ -67,7 +67,7 @@ export default function UserProfileDropdown({ layoutVariant = "header" }: UserPr
   const roleBadgeColor = roleConfig.badgeColor;
   const roleDisplayName = roleConfig.title;
   const isSidebar = layoutVariant === "sidebar";
-  const employeeId = profile?.employeeId || `${roleConfig.defaultEmployeeIdPrefix}-001`;
+  const employeeId = profile?.employeeId || "Not assigned";
 
   return (
     <div className={`relative ${!isSidebar ? "pl-2" : ""}`} ref={dropdownRef}>

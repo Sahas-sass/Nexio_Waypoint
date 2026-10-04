@@ -1,39 +1,30 @@
-import { useCallback } from 'react';
+import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/waypoint/icon';
-import { flushSyncQueue } from '@/database/syncManager';
-import { useQueueStore } from '@/store/queueStore';
+import { useSyncStore } from '@/features/sync/store/syncStore';
 import { Colors, font } from '@/utils/theme';
 
+/** Shown while the device has no connection; taps open the sync queue. */
 export function OfflineBanner() {
   const insets = useSafeAreaInsets();
-  const isOnline = useQueueStore((state) => state.isOnline);
-  const pendingCount = useQueueStore((state) => state.pendingCount);
-  const setIsOnline = useQueueStore((state) => state.setIsOnline);
+  const isOnline = useSyncStore((state) => state.isOnline);
+  const pendingCount = useSyncStore((state) => state.pendingCount);
 
-  const handleSimulateRestored = useCallback(async () => {
-    setIsOnline(true);
-    await flushSyncQueue();
-  }, [setIsOnline]);
-
-  if (isOnline) {
-    return null;
-  }
+  if (isOnline) return null;
 
   return (
     <Animated.View
       entering={FadeInUp.duration(300)}
       exiting={FadeOutUp.duration(200)}
-      style={[
-        styles.container,
-        {
-          paddingTop: Math.max(insets.top, 12),
-        },
-      ]}>
-      <View style={styles.innerContent}>
+      style={[styles.container, { paddingTop: Math.max(insets.top, 12) }]}>
+      <Pressable
+        onPress={() => router.push('/offline')}
+        accessibilityRole="button"
+        accessibilityLabel="Open sync status"
+        style={styles.innerContent}>
         <View style={styles.messageRow}>
           <View style={styles.iconCircle}>
             <Icon name="wifiOff" size={17} color="#FFFFFF" />
@@ -41,31 +32,15 @@ export function OfflineBanner() {
           <View style={styles.textContainer}>
             <Text style={styles.title}>You&apos;re Offline</Text>
             <Text style={styles.subtext}>
-              Your delivery data is being saved securely on this device • {pendingCount} records pending sync.
+              Your delivery data is being saved securely on this device • {pendingCount}{' '}
+              {pendingCount === 1 ? 'record' : 'records'} pending sync.
             </Text>
           </View>
         </View>
-
-        <View style={styles.actionRow}>
-          <Pressable
-            onPress={handleSimulateRestored}
-            style={({ pressed }) => [
-              styles.pillButton,
-              pressed && styles.pillButtonPressed,
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Simulate Connection Restored"
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Icon name="cloud" size={13} color="#92400E" />
-            <Text style={styles.pillButtonText}>Simulate Connection Restored</Text>
-          </Pressable>
-        </View>
-      </View>
+      </Pressable>
     </Animated.View>
   );
 }
-
-export default OfflineBanner;
 
 const styles = StyleSheet.create({
   container: {
@@ -116,30 +91,5 @@ const styles = StyleSheet.create({
     lineHeight: 15,
     color: 'rgba(255, 255, 255, 0.95)',
     marginTop: 2,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    paddingLeft: 38,
-  },
-  pillButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.surfaceWhite,
-    paddingVertical: 5,
-    paddingHorizontal: 12,
-    borderRadius: 9999,
-    boxShadow: '0px 2px 6px rgba(0, 0, 0, 0.12)',
-  },
-  pillButtonPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.98 }],
-  },
-  pillButtonText: {
-    ...font(700),
-    fontSize: 11,
-    color: '#92400E',
-    letterSpacing: 0.1,
   },
 });

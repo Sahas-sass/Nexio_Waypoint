@@ -8,7 +8,8 @@ import {
   signOutUser, 
   uploadUserAvatar, 
   updateUserProfile,
-  getDashboardUrlForRole 
+  getDashboardUrlForRole,
+  type ProfileUpdates,
 } from "./userProfileService";
 
 export function useUserProfile() {
@@ -19,50 +20,40 @@ export function useUserProfile() {
 
   const loadProfile = useCallback(async () => {
     try {
-      setLoading(true);
-      setError(null);
       const data = await fetchCurrentUserProfile();
       setProfile(data);
-    } catch (err: any) {
-      setError(err?.message || "Failed to load user profile");
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load user profile");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadProfile();
-  }, [loadProfile]);
+    // Initial load; state is only set from the promise callbacks
+    fetchCurrentUserProfile()
+      .then((data) => setProfile(data))
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load user profile"))
+      .finally(() => setLoading(false));
+  }, []);
 
   const uploadAvatar = useCallback(async (file: File) => {
     try {
       const publicUrl = await uploadUserAvatar(file);
       setProfile((prev) => (prev ? { ...prev, avatarUrl: publicUrl } : null));
       return publicUrl;
-    } catch (err: any) {
+    } catch (err) {
       console.error("Avatar upload error:", err);
       throw err;
     }
   }, []);
 
-  const updateProfile = useCallback(async (updates: {
-    fullName?: string;
-    phone?: string;
-    department?: string;
-    outlet?: string;
-    shift?: string;
-    assignedBay?: string;
-    station?: string;
-    employeeId?: string;
-    activities?: any[];
-    status?: string;
-    isVerified?: boolean;
-    assignedMeta?: string;
-  }) => {
+  const updateProfile = useCallback(async (updates: ProfileUpdates) => {
     try {
       await updateUserProfile(updates);
       setProfile((prev) => (prev ? { ...prev, ...updates } : null));
-    } catch (err: any) {
+    } catch (err) {
       console.error("Profile update error:", err);
       throw err;
     }

@@ -1,15 +1,13 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
     Alert,
-    Modal,
     Pressable,
     StyleSheet,
     Text,
     TextInput,
     View,
 } from 'react-native';
-import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CameraCapture } from '@/components/pod/CameraCapture';
@@ -23,116 +21,81 @@ import {
     SafetyNote,
     TitleRow,
 } from '@/components/waypoint/ui';
-import { db, initDatabase, type StopRecord } from '@/database/schema';
-import { enqueueSyncItem, flushSyncQueue } from '@/database/syncManager';
-import { useQueueStore } from '@/store/queueStore';
+import { ItemsStepper } from '@/features/pod/components/ItemsStepper';
+import { StopEmptyState } from '@/features/pod/components/StopEmptyState';
+import { findStop } from '@/features/pod/utils/findStop';
+import type { CapturedPhoto } from '@/features/pod/utils/photoAsset';
+import { useSyncStore } from '@/features/sync/store/syncStore';
+import { buildPodPayload, podOutcome } from '@/features/sync/utils/payloads';
+import { useTrip } from '@/features/trip/hooks/useTrip';
+import { submitProofOfDelivery } from '@/features/trip/services/tripController';
+import { padStop } from '@/utils/formatters';
 import { Colors, font, Radius, Shadow, W } from '@/utils/theme';
+
+const OUTCOME_PILL = {
+    delivered: { label: 'Full delivery', background: W.greenSoft, color: W.greenDark },
+    partial: { label: 'Shortfall', background: W.orangeSoft, color: Colors.offlineText },
+    failed: { label: 'Failed', background: '#FDECEC', color: '#B42318' },
+} as const;
 
 export default function PodScreen() {
     const insets = useSafeAreaInsets();
     const { stopId } = useLocalSearchParams<{ stopId?: string }>();
+    const { stops, activeStop } = useTrip();
+    const isOnline = useSyncStore((s) => s.isOnline);
+    const stop = findStop(stops, stopId, activeStop);
 
-    // Query stop details dynamically from SQLite
-    const stop = useMemo<StopRecord | null>(() => {
-        try {
-            let found: StopRecord | null = null;
-            if (stopId) {
-                found = db.getFirstSync<StopRecord>(
-                    'SELECT * FROM stops WHERE id = ? OR stop_number = ? LIMIT 1;',
-                    [stopId, Number(stopId) || 0]
-                );
-            }
-            if (!found) {
-                found = db.getFirstSync<StopRecord>(
-                    "SELECT * FROM stops WHERE status = 'IN_PROGRESS' ORDER BY stop_number ASC LIMIT 1;"
-                );
-            }
-            if (!found) {
-                initDatabase();
-                found = db.getFirstSync<StopRecord>(
-                    'SELECT * FROM stops ORDER BY stop_number ASC LIMIT 1;'
-                );
-            }
-            return found;
-        } catch (err) {
-            console.error('[PodScreen] Error loading stop from SQLite:', err);
-            return null;
-        }
-    }, [stopId]);
-
-    // Form states
-    const [checklistConfirmed, setChecklistConfirmed] = useState(true);
-    const [signatureData, setSignatureData] = useState<string | null>(null);
-    const [photoUri, setPhotoUri] = useState<string | null>(null);
-    const [note, setNote] = useState('Goods received and checked by store manager.');
+    const [itemsDelivered, setItemsDelivered] = useState<number | null>(null);
+    const [failed, setFailed] = useState(false);
+    const [signaturePng, setSignaturePng] = useState<string | null>(null);
+    const [photo, setPhoto] = useState<CapturedPhoto | null>(null);
+    const [note, setNote] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [showCelebration, setShowCelebration] = useState(false);
 
-    // Resolved stop attributes
-    const stopNumberStr = stop ? String(stop.stop_number).padStart(2, '0') : '02';
-    const storeName = stop?.store_name ?? 'Fresh Store #22';
-    const itemsCount = stop?.items_count ?? 28;
-    const isChilled = stop?.is_chilled === 1;
+    if (!stop) {
+        return (
+            <Screen>
+                <StopEmptyState icon="alert" title="Stop not found" message="This stop is not on your current trip." />
+            </Screen>
+        );
+    }
 
-    // Complete Delivery Action
+    if (stop.status === 'COMPLETED' || stop.status === 'FAILED') {
+        return (
+            <Screen>
+                <StopEmptyState
+                    icon="check"
+                    title="Proof of delivery recorded"
+                    message={`${stop.storeName} is already closed.`}
+                />
+            </Screen>
+        );
+    }
+
+    const itemsExpected = stop.itemCount;
+    const delivered = failed ? 0 : itemsDelivered ?? itemsExpected;
+    const outcome = podOutcome(itemsExpected, delivered, failed);
+    const noteRequired = outcome !== 'delivered';
+    const pill = OUTCOME_PILL[outcome];
+
     const handleCompleteDelivery = () => {
-        if (!checklistConfirmed) {
-            Alert.alert(
-                'Checklist Incomplete',
-                'Please verify that all items were delivered in good condition before completing delivery.'
-            );
-            return;
-        }
-
-        if (!signatureData) {
-            Alert.alert(
-                'Signature Required',
-                'Please obtain the store manager signature and tap "Confirm Signature" before completing delivery.'
-            );
-            return;
-        }
-
         setIsSubmitting(true);
-
         try {
-            const activeStopId = stop?.id ?? stopId ?? '02';
-
-            const payload = {
-                stopId: activeStopId,
-                storeName,
-                checklistConfirmed: true,
-                signatureData,
-                photoUri,
-                note,
-                completedAt: new Date().toISOString(),
-            };
-
-            // 1. Update SQLite stops table: UPDATE stops SET status = 'COMPLETED' WHERE id = ?
-            // 2. Insert into SQLite sync_queue: action_type = 'POD_COMPLETE'
-            // 3. Update pendingCount in useQueueStore
-            // 4. Trigger flushSyncQueue() if online
-            enqueueSyncItem(activeStopId, 'POD_COMPLETE', payload);
-
-            // Trigger sync in background
-            void flushSyncQueue();
-
-            // Query the next pending stop from SQLite
-            const nextPendingStop = db.getFirstSync<StopRecord>(
-                "SELECT id FROM stops WHERE status = 'PENDING' ORDER BY stop_number ASC LIMIT 1;"
-            );
-
-            // Navigate directly to the delivery complete and next stop handover screen
-            router.replace({
-                pathname: '/pod/complete',
-                params: {
-                    completedStopId: activeStopId,
-                    nextStopId: nextPendingStop?.id,
-                },
+            const payload = buildPodPayload({
+                stopId: stop.id,
+                itemsExpected,
+                itemsDelivered: delivered,
+                failed,
+                notes: note,
+                photo: photo ? { base64: photo.base64, mimeType: photo.mimeType } : null,
+                signaturePng,
+                isOnline,
             });
+            submitProofOfDelivery(payload);
+            router.replace({ pathname: '/pod/complete', params: { stopId: stop.id } });
         } catch (err) {
-            console.error('[PodScreen] Error saving PoD:', err);
             setIsSubmitting(false);
-            Alert.alert('Error', 'Failed to save delivery record. Please try again.');
+            Alert.alert('Cannot complete delivery', err instanceof Error ? err.message : 'Please try again.');
         }
     };
 
@@ -145,151 +108,95 @@ export default function PodScreen() {
                         onPress={handleCompleteDelivery}
                         disabled={isSubmitting}
                         accessibilityRole="button"
-                        accessibilityLabel="Complete Delivery"
+                        accessibilityLabel={failed ? 'Record Failed Delivery' : 'Complete Delivery'}
                         style={({ pressed }) => [
                             styles.completeButton,
                             isSubmitting && { opacity: 0.7 },
                             pressed && !isSubmitting && styles.completeButtonPressed,
                         ]}>
                         <Text style={styles.completeButtonText}>
-                            {isSubmitting ? 'Saving…' : 'Complete Delivery ✓'}
+                            {isSubmitting ? 'Saving…' : failed ? 'Record Failed Delivery' : 'Complete Delivery ✓'}
                         </Text>
                     </Pressable>
-                    <SafetyNote>This notifies the Dispatcher and Store Manager</SafetyNote>
+                    <SafetyNote>
+                        {isOnline
+                            ? 'This notifies the Dispatcher and Store Manager'
+                            : 'Offline – saved on this device and synced when back online'}
+                    </SafetyNote>
                 </View>
             }>
-            {/* Header Bar */}
             <TitleRow
                 center
-                eyebrow={`STOP ${stopNumberStr} · ${storeName.toUpperCase()}`}
+                eyebrow={`STOP ${padStop(stop.sequence)} · ${stop.storeName.toUpperCase()}`}
                 title="Proof of Delivery"
-                subtitle="Confirm delivery details below"
-                aside={
-                    <View style={styles.stepBadge}>
-                        <Text style={styles.stepBadgeNumber}>2/3</Text>
-                        <Text style={styles.stepBadgeLabel}>STEPS</Text>
-                    </View>
-                }
+                subtitle={stop.orderNumber ? `Order ${stop.orderNumber}` : 'Confirm delivery details below'}
             />
 
-            {/* Step 1: Delivery Checklist */}
+            {/* Step 1: Items handed over */}
             <Card style={styles.checklistCard}>
                 <View style={styles.rowBetween}>
                     <Label size={9} spacing={0.11}>
-                        STEP 1 · DELIVERY CHECKLIST
+                        STEP 1 · ITEMS DELIVERED
                     </Label>
-                    <Pill
-                        background={W.greenSoft}
-                        color={W.greenDark}
-                        icon="check"
-                        iconSize={13}>
-                        Verified
+                    <Pill background={pill.background} color={pill.color} iconSize={13}>
+                        {pill.label}
                     </Pill>
                 </View>
 
                 <View style={[styles.rowBetween, { marginTop: 12, marginBottom: 12 }]}>
-                    <View>
-                        <Text style={styles.itemCountBig}>
-                            {itemsCount}{' '}
-                            <Text style={styles.itemCountTotal}>/ {itemsCount}</Text>
-                        </Text>
-                        <Text style={styles.itemCountLabel}>Items Delivered</Text>
-                    </View>
-
-                    <View style={styles.bigCheckCircle}>
-                        <Icon name="check" size={24} color={Colors.surfaceWhite} />
-                    </View>
-                </View>
-
-                {/* Tappable Condition Checkbox */}
-                <Pressable
-                    onPress={() => setChecklistConfirmed(!checklistConfirmed)}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: checklistConfirmed }}
-                    style={[
-                        styles.conditionCheckbox,
-                        checklistConfirmed && styles.conditionCheckboxActive,
-                    ]}>
-                    <View
-                        style={[
-                            styles.checkIconBox,
-                            checklistConfirmed && styles.checkIconBoxChecked,
-                        ]}>
-                        {checklistConfirmed && (
-                            <Icon name="check" size={13} color={Colors.surfaceWhite} />
-                        )}
-                    </View>
-                    <Text style={styles.conditionText}>
-                        All items delivered in good condition
-                    </Text>
-                    {isChilled && (
+                    <ItemsStepper
+                        value={delivered}
+                        max={itemsExpected}
+                        disabled={failed}
+                        onChange={setItemsDelivered}
+                    />
+                    {stop.temp === 'chilled' && (
                         <View style={styles.tempBadge}>
                             <Icon name="snow" size={11} color="#08759E" />
-                            <Text style={styles.tempBadgeText}>2.8°C</Text>
+                            <Text style={styles.tempBadgeText}>Chilled</Text>
                         </View>
                     )}
+                </View>
+
+                <Pressable
+                    onPress={() => setFailed(!failed)}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: failed }}
+                    style={[styles.conditionCheckbox, failed && styles.conditionCheckboxActive]}>
+                    <View style={[styles.checkIconBox, failed && styles.checkIconBoxChecked]}>
+                        {failed && <Icon name="check" size={13} color={Colors.surfaceWhite} />}
+                    </View>
+                    <Text style={styles.conditionText}>Delivery failed (store closed, refused…)</Text>
                 </Pressable>
             </Card>
 
-            {/* Step 2: Store Manager Signature */}
+            {!failed && (
+                <View style={styles.stepSection}>
+                    <SignaturePad onConfirm={setSignaturePng} isConfirmed={Boolean(signaturePng)} />
+                </View>
+            )}
+
             <View style={styles.stepSection}>
-                <SignaturePad
-                    onConfirm={(svg) => setSignatureData(svg)}
-                    isConfirmed={Boolean(signatureData)}
-                />
+                <CameraCapture onCapture={setPhoto} photo={photo} />
             </View>
 
-            {/* Step 3: Delivery Photo */}
-            <View style={styles.stepSection}>
-                <CameraCapture
-                    onCapture={(uri) => setPhotoUri(uri)}
-                    imageUri={photoUri}
-                />
-            </View>
-
-            {/* Optional Delivery Notes */}
             <View style={styles.notesCard}>
                 <View style={styles.rowBetween}>
                     <Text style={styles.notesTitle}>Delivery note</Text>
-                    <Text style={styles.notesOptional}>Optional</Text>
+                    <Text style={styles.notesOptional}>{noteRequired ? 'Required' : 'Optional'}</Text>
                 </View>
                 <TextInput
                     value={note}
                     onChangeText={setNote}
-                    placeholder="e.g. Goods received and checked by store manager"
+                    placeholder={noteRequired ? 'Explain the shortfall or failure' : 'e.g. Goods checked by store manager'}
                     placeholderTextColor="#9CA3AF"
                     multiline
+                    maxLength={500}
                     numberOfLines={3}
-                    accessibilityLabel="Delivery note (optional)"
+                    accessibilityLabel="Delivery note"
                     style={styles.notesInput}
                 />
             </View>
-
-            {/* Celebration Completion Modal */}
-            <Modal
-                visible={showCelebration}
-                transparent
-                animationType="fade"
-                statusBarTranslucent>
-                <View style={styles.celebrationOverlay}>
-                    <Animated.View
-                        entering={ZoomIn.duration(400)}
-                        style={styles.celebrationCard}>
-                        <View style={styles.celebrationRing}>
-                            <Icon name="check" size={42} color={Colors.surfaceWhite} />
-                        </View>
-                        <Text style={styles.celebrationTitle}>Delivery Completed!</Text>
-                        <Text style={styles.celebrationStore}>{storeName}</Text>
-                        <Text style={styles.celebrationSubtext}>
-                            Proof of delivery captured & saved to offline queue.
-                        </Text>
-                        <View style={styles.syncedPill}>
-                            <Icon name="shield" size={13} color={W.greenDark} />
-                            <Text style={styles.syncedPillText}>Local SQLite Record Queued</Text>
-                        </View>
-                    </Animated.View>
-                </View>
-            </Modal>
         </Screen>
     );
 }
