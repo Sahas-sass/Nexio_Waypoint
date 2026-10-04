@@ -75,8 +75,8 @@ export default function UserProfileCard() {
   const displayLocation = roleConfig.getLocationDisplay(profile);
   const displayAssignedMeta = roleConfig.getMetaDisplay(profile);
   const assignedLabel = roleConfig.assignedLabel;
-  const isVerified = profile?.isVerified ?? true;
-  const status = profile?.status || "Online";
+  const isVerified = profile?.isVerified ?? false;
+  const status = profile?.status || "Unknown";
   const avatarUrl = profile?.avatarUrl;
   const initials = profile?.initials || "WP";
 

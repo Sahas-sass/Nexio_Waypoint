@@ -9,21 +9,21 @@ import { getRoleDashboard, hasPortal } from "@/lib/auth/roleRoutes";
 // Dynamic Content Configuration
 const roleContent = {
   dispatcher: {
-    image: "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?q=80&w=2070&auto=format&fit=crop",
+    image: "/truck_heavy.jpg",
     tagline: "CONNECTED RETAIL LOGISTICS",
     title: "Every delivery,\nright on time.",
     desc: "Plan allocations, defer overflow, and track live routes from one unified command center.",
     email: "dispatch@waypoint.com",
   },
   loader: {
-    image: "https://images.unsplash.com/photo-1553413077-190dd305871c?q=80&w=2070&auto=format&fit=crop",
+    image: "/truck_reefer.jpg",
     tagline: "WAREHOUSE OPERATIONS",
     title: "Load sequences,\nperfectly ordered.",
     desc: "Manage trip queues, enforce reverse-stop loading, and dispatch vehicles efficiently.",
     email: "load@waypoint.com",
   },
   manager: {
-    image: "https://images.unsplash.com/photo-1604719312566-8912e9227c6a?q=80&w=2000&auto=format&fit=crop",
+    image: "/van_express.jpg",
     tagline: "STORE MANAGEMENT",
     title: "Total visibility\nfor your store.",
     desc: "Monitor incoming deliveries, review exception alerts, and manage receiving dashboards.",
