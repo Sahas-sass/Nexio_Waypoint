@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutGrid, Calendar, MapPin, Clock, Bell, Settings } from "lucide-react";
+import UserProfileDropdown from "@/app/profile/UserProfileDropdown";
 
 export default function DispatcherLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -68,19 +69,20 @@ export default function DispatcherLayout({ children }: { children: React.ReactNo
             <span className="text-[10px] font-medium tracking-tight group-hover:font-semibold">Alerts</span>
           </button>
 
-          {/* Settings */}
-          <button className="flex flex-col items-center gap-1.5 text-waypoint-secondary hover:text-waypoint-text transition-colors group">
+          {/* Settings / Profile */}
+          <Link 
+            href="/profile" 
+            className="flex flex-col items-center gap-1.5 text-waypoint-secondary hover:text-waypoint-text transition-colors group"
+          >
             <div className="p-1">
               <Settings className="w-5.5 h-5.5" strokeWidth={1.5} />
             </div>
             <span className="text-[10px] font-medium tracking-tight group-hover:font-semibold">Settings</span>
-          </button>
+          </Link>
           
           {/* Profile Identity */}
-          <div className="mt-2 w-11.5 h-11.5 bg-waypoint-text rounded-2xl flex items-center justify-center text-white font-semibold text-[13px] cursor-pointer shadow-sm relative">
-            KS
-            {/* Green Online Status Dot */}
-            <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-waypoint-success rounded-full border-2 border-white" />
+          <div className="mt-2 flex justify-center w-full">
+            <UserProfileDropdown layoutVariant="sidebar" />
           </div>
         </div>
       </aside>

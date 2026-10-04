@@ -61,7 +61,12 @@ export default function LoginPage() {
       setError(error.message);
       setLoading(false);
     } else {
-      router.push("/command-center");
+      const destination = activeRole === "loader" 
+        ? "/trip-queue" 
+        : activeRole === "manager" 
+        ? "/overview" 
+        : "/command-center";
+      router.push(destination);
       router.refresh();
     }
   };
