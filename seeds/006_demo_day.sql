@@ -86,3 +86,27 @@ WHERE id = 'b1042000-0000-0000-0000-000000000001';
 
 -- 5. Receipts are re-done in the walkthrough -------------------------------------
 DELETE FROM public.store_receipts WHERE order_id = 'd0000000-0000-0000-0000-000000000005';
+
+-- 6. Yesterday's completed run that delivered ORD-2999, with its proof of delivery
+INSERT INTO public.trips (id, trip_number, vehicle_id, driver_id, trip_date, status, bay, departure_time, dispatched_at)
+SELECT 'b1038000-0000-0000-0000-000000000007', 'TRIP 1038', '7ac4a82c-9ad3-89c2-38ab-8cb78ea6533e',
+       u.id, (now() AT TIME ZONE 'Asia/Colombo')::date - 1, 'completed', 'Bay 01', '06:15 AM',
+       (((now() AT TIME ZONE 'Asia/Colombo')::date - 1) + TIME '06:15') AT TIME ZONE 'Asia/Colombo'
+FROM auth.users u WHERE u.email = 'driver@waypoint.com'
+ON CONFLICT (id) DO UPDATE SET trip_date = EXCLUDED.trip_date, status = 'completed', dispatched_at = EXCLUDED.dispatched_at;
+
+INSERT INTO public.trip_stops (id, trip_id, order_id, store_id, stop_sequence, estimated_arrival, status, completed_at)
+VALUES ('c1038001-0000-0000-0000-000000000001', 'b1038000-0000-0000-0000-000000000007',
+        'd0000000-0000-0000-0000-000000000005', 'a1111111-1111-1111-1111-111111111111', 1,
+        (((now() AT TIME ZONE 'Asia/Colombo')::date - 1) + TIME '08:05') AT TIME ZONE 'Asia/Colombo', 'COMPLETED',
+        (((now() AT TIME ZONE 'Asia/Colombo')::date - 1) + TIME '08:12') AT TIME ZONE 'Asia/Colombo')
+ON CONFLICT (id) DO UPDATE SET estimated_arrival = EXCLUDED.estimated_arrival, status = 'COMPLETED', completed_at = EXCLUDED.completed_at;
+
+INSERT INTO public.proof_of_delivery (stop_id, items_expected, items_delivered, notes, captured_offline, synced_at, outcome, captured_by, captured_at)
+SELECT 'c1038001-0000-0000-0000-000000000001', 14, 13,
+       'One case of soft drinks short at loading; noted with store staff.', true,
+       (((now() AT TIME ZONE 'Asia/Colombo')::date - 1) + TIME '08:40') AT TIME ZONE 'Asia/Colombo',
+       'partial', u.id,
+       (((now() AT TIME ZONE 'Asia/Colombo')::date - 1) + TIME '08:12') AT TIME ZONE 'Asia/Colombo'
+FROM auth.users u WHERE u.email = 'driver@waypoint.com'
+ON CONFLICT (stop_id) DO UPDATE SET captured_at = EXCLUDED.captured_at, synced_at = EXCLUDED.synced_at;
