@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -31,6 +31,13 @@ export function CameraCapture({
   const [timestamp, setTimestamp] = useState<string | null>(
     propCaptured ? '8:23 AM' : null
   );
+
+  useEffect(() => {
+    setPhotoUri(propImageUri ?? (propCaptured ? deliveryPhoto : null));
+    if (!propImageUri && !propCaptured) {
+      setTimestamp(null);
+    }
+  }, [propImageUri, propCaptured]);
 
   const isCaptured = Boolean(photoUri || propCaptured);
 
