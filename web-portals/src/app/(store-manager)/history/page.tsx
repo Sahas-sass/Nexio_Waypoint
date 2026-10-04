@@ -99,6 +99,12 @@ export default function HistoryPage() {
   const [activeTab, setActiveTab] = useState<string>("All activity");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
+  const filteredData = TABLE_DATA.filter((row) => {
+    const matchesTab = activeTab === "All activity" || row.status === activeTab;
+    const matchesSearch = row.orderId.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesTab && matchesSearch;
+  });
+
   return (
     <>
       {/* 2. TOP NAVIGATION BAR */}
@@ -125,7 +131,7 @@ export default function HistoryPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search orders, vehicles, products..."
+              placeholder="Search orders..."
               className="bg-transparent text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none w-full"
             />
           </div>
@@ -274,6 +280,8 @@ export default function HistoryPage() {
                 <Search className="w-3.5 h-3.5 text-neutral-400" />
                 <input
                   type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search order number..."
                   className="bg-transparent text-[11px] font-medium text-neutral-800 placeholder-neutral-400 focus:outline-none w-40"
                 />
@@ -310,7 +318,7 @@ export default function HistoryPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#ECEAE4]">
-                {TABLE_DATA.map((row) => (
+                {filteredData.map((row) => (
                   <tr
                     key={row.id}
                     className="hover:bg-[#FAF9F6] transition-colors group cursor-pointer"

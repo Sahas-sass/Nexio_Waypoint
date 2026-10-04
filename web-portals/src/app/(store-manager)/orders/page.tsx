@@ -23,7 +23,10 @@ import {
   Plus,
   ArrowRight,
   Info,
+  X,
 } from "lucide-react";
+
+import { useRouter } from "next/navigation";
 
 // --- Types ---
 interface Store {
@@ -85,9 +88,14 @@ const INITIAL_PRODUCTS: Product[] = [
 ];
 
 export default function OrdersPage() {
+  const router = useRouter();
   const [activeNav, setActiveNav] = useState<string>("Orders");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [activeCategory, setActiveCategory] = useState<string>("produce");
+  
+  const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
+  const [isDraftModalOpen, setIsDraftModalOpen] = useState(false);
+  const [isViewAllModalOpen, setIsViewAllModalOpen] = useState(false);
 
   // State for product quantities
   const [quantities, setQuantities] = useState<Record<string, number>>({
@@ -269,7 +277,10 @@ export default function OrdersPage() {
                     Daily ordering • Chilled handling
                   </p>
                 </div>
-                <button className="text-xs font-semibold text-neutral-600 hover:text-neutral-900 flex items-center gap-1 transition-colors">
+                <button 
+                  onClick={() => setIsViewAllModalOpen(true)}
+                  className="text-xs font-semibold text-neutral-600 hover:text-neutral-900 flex items-center gap-1 transition-colors"
+                >
                   <span>View all</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
@@ -425,11 +436,17 @@ export default function OrdersPage() {
                 </div>
 
                 <div className="mt-5 space-y-3 text-center">
-                  <button className="w-full py-3 rounded-xl bg-[#F5C242] hover:bg-[#eab308] active:scale-[0.99] text-neutral-900 font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm">
+                  <button 
+                    onClick={() => setIsSubmitModalOpen(true)}
+                    className="w-full py-3 rounded-xl bg-[#F5C242] hover:bg-[#eab308] active:scale-[0.99] text-neutral-900 font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                  >
                     <span>Review & submit order</span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
-                  <button className="text-xs font-semibold text-neutral-500 hover:text-neutral-900 transition-colors">
+                  <button 
+                    onClick={() => setIsDraftModalOpen(true)}
+                    className="text-xs font-semibold text-neutral-500 hover:text-neutral-900 transition-colors"
+                  >
                     Save as draft
                   </button>
                 </div>
@@ -438,6 +455,102 @@ export default function OrdersPage() {
           </div>
         </div>
       </main>
+
+      {/* View All Modal */}
+      {isViewAllModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-2xl overflow-hidden shadow-xl border border-[#ECEAE4] animate-in fade-in zoom-in duration-200">
+            <div className="px-6 py-4 border-b border-[#ECEAE4] flex items-center justify-between bg-[#FDFDFC]">
+              <div>
+                <h2 className="text-lg font-bold text-neutral-900">Full Fresh Catalogue</h2>
+                <p className="text-xs text-neutral-500 mt-0.5">Browse all available items in the Fresh category</p>
+              </div>
+              <button 
+                onClick={() => setIsViewAllModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center text-neutral-600 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-neutral-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Search className="w-8 h-8 text-neutral-400" />
+              </div>
+              <h3 className="text-lg font-bold text-neutral-900 mb-2">Catalogue Search</h3>
+              <p className="text-sm text-neutral-500 mb-6 max-w-md mx-auto">
+                The full catalogue view with advanced filtering and search capabilities is loading. This will display all 400+ fresh items.
+              </p>
+              <button 
+                onClick={() => setIsViewAllModalOpen(false)}
+                className="px-6 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-sm rounded-xl transition-all shadow-sm"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Submit Order Modal */}
+      {isSubmitModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-xl border border-[#ECEAE4] animate-in fade-in zoom-in duration-200">
+            <div className="p-6 text-center">
+              <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Check className="w-6 h-6 stroke-[3]" />
+              </div>
+              <h3 className="text-lg font-bold text-neutral-900 mb-2">Order Submitted</h3>
+              <p className="text-sm text-neutral-500 mb-6">
+                Your daily grocery order of 46 units has been successfully submitted for tomorrow's planning cycle.
+              </p>
+              
+              <div className="flex flex-col gap-3">
+                <button 
+                  onClick={() => {
+                    setIsSubmitModalOpen(false);
+                  }}
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-bold text-sm rounded-xl transition-all shadow-sm"
+                >
+                  Done
+                </button>
+                <button 
+                  onClick={() => {
+                    setIsSubmitModalOpen(false);
+                    router.push("/history");
+                  }}
+                  className="w-full py-2.5 bg-white border border-[#ECEAE4] hover:bg-neutral-50 active:scale-[0.99] text-neutral-700 font-bold text-sm rounded-xl transition-all shadow-sm"
+                >
+                  View Order History
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save Draft Modal */}
+      {isDraftModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-xl border border-[#ECEAE4] animate-in fade-in zoom-in duration-200">
+            <div className="p-6 text-center">
+              <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Info className="w-6 h-6 stroke-[2]" />
+              </div>
+              <h3 className="text-lg font-bold text-neutral-900 mb-2">Draft Saved</h3>
+              <p className="text-sm text-neutral-500 mb-6">
+                Your current order quantities have been safely saved as a draft. You can resume editing this order later.
+              </p>
+              
+              <button 
+                onClick={() => setIsDraftModalOpen(false)}
+                className="w-full py-2.5 bg-[#F5C242] hover:bg-[#eab308] active:scale-[0.99] text-neutral-900 font-bold text-sm rounded-xl transition-all shadow-sm"
+              >
+                Continue Working
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

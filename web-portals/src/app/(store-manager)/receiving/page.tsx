@@ -16,6 +16,7 @@ import {
   Package,
   MapPin,
   RotateCcw,
+  X,
 } from "lucide-react";
 
 // --- Types ---
@@ -80,6 +81,8 @@ const CHECKLIST = [
 export default function ReceivingPage() {
   const [activeNav] = useState<string>("Receiving");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAckModalOpen, setIsAckModalOpen] = useState(false);
 
   return (
     <>
@@ -389,7 +392,10 @@ export default function ReceivingPage() {
                   </div>
                 </div>
 
-                <button className="w-full py-2.5 rounded-xl bg-[#F5C242] hover:bg-[#eab308] active:scale-[0.99] text-neutral-900 font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm">
+                <button 
+                  onClick={() => setIsModalOpen(true)}
+                  className="w-full py-2.5 rounded-xl bg-[#F5C242] hover:bg-[#eab308] active:scale-[0.99] text-neutral-900 font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                >
                   <span>View delivery</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
@@ -428,6 +434,137 @@ export default function ReceivingPage() {
           </div>
         </div>
       </main>
+
+      {/* Delivery Details Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-lg overflow-hidden shadow-xl border border-[#ECEAE4] animate-in fade-in zoom-in duration-200">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-[#ECEAE4] flex items-center justify-between bg-[#FDFDFC]">
+              <div>
+                <h2 className="text-lg font-bold text-neutral-900">Delivery Details</h2>
+                <p className="text-xs text-neutral-500 mt-0.5">TRK-024 • Fresh Store #22</p>
+              </div>
+              <button 
+                onClick={() => setIsModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center text-neutral-600 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-6">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="text-[10px] font-semibold text-emerald-600 tracking-wider uppercase mb-1">
+                    Status
+                  </div>
+                  <div className="text-sm font-bold text-neutral-900">
+                    On Schedule (6.4 km away)
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] font-semibold text-neutral-500 tracking-wider uppercase mb-1">
+                    Expected ETA
+                  </div>
+                  <div className="text-sm font-bold text-neutral-900">
+                    07:42 AM
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-[#F7F6F2] rounded-xl p-4 flex items-center justify-between border border-[#ECEAE4]">
+                <div className="flex items-center gap-3">
+                  <div className="bg-[#1C1C1C] text-white text-xs font-semibold w-10 h-10 rounded-full flex items-center justify-center">
+                    KP
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-neutral-900">
+                      Kasun Perera
+                    </div>
+                    <div className="text-[11px] text-neutral-500">
+                      Contact: +94 77 123 4567
+                    </div>
+                  </div>
+                </div>
+                <button className="bg-white border border-[#ECEAE4] text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm hover:bg-neutral-50 transition-colors text-neutral-700">
+                  Call Driver
+                </button>
+              </div>
+
+              <div>
+                <div className="text-[11px] font-bold text-neutral-900 uppercase tracking-wider mb-3">Manifest Summary (26 items)</div>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center text-sm border-b border-[#ECEAE4] pb-2">
+                    <span className="text-neutral-600">Fresh Produce</span>
+                    <span className="font-bold text-neutral-900">12 Pallets</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm border-b border-[#ECEAE4] pb-2">
+                    <span className="text-neutral-600">Chilled Goods</span>
+                    <span className="font-bold text-neutral-900">8 Pallets</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm border-b border-[#ECEAE4] pb-2 border-b-0">
+                    <span className="text-neutral-600">Dry Groceries</span>
+                    <span className="font-bold text-neutral-900">6 Pallets</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-[#FDFDFC] border-t border-[#ECEAE4] flex justify-end gap-3">
+              <button 
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-2 text-xs font-bold text-neutral-600 hover:text-neutral-900 transition-colors"
+              >
+                Close
+              </button>
+              <button 
+                onClick={() => setIsAckModalOpen(true)}
+                className="px-4 py-2 bg-[#F5C242] hover:bg-[#eab308] text-neutral-900 text-xs font-bold rounded-xl shadow-sm transition-colors"
+              >
+                Acknowledge Receipt
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Acknowledge Receipt Confirmation Modal */}
+      {isAckModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-xl border border-[#ECEAE4] animate-in fade-in zoom-in duration-200">
+            <div className="p-6 text-center">
+              <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Check className="w-6 h-6 stroke-[3]" />
+              </div>
+              <h3 className="text-lg font-bold text-neutral-900 mb-2">Confirm Receipt</h3>
+              <p className="text-sm text-neutral-500 mb-6">
+                Are you sure you want to acknowledge the delivery of TRK-024? This action cannot be undone.
+              </p>
+              
+              <div className="flex flex-col gap-3">
+                <button 
+                  onClick={() => {
+                    setIsAckModalOpen(false);
+                    setIsModalOpen(false);
+                  }}
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-bold text-sm rounded-xl transition-all shadow-sm"
+                >
+                  Confirm & Complete
+                </button>
+                <button 
+                  onClick={() => setIsAckModalOpen(false)}
+                  className="w-full py-2.5 bg-white border border-[#ECEAE4] hover:bg-neutral-50 active:scale-[0.99] text-neutral-700 font-bold text-sm rounded-xl transition-all shadow-sm"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

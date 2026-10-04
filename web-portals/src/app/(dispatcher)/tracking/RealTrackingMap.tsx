@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
-import "leaflet/dist/leaflet.css";
 import { Plus, Minus, Layers } from "lucide-react";
 import { LiveTrackingVehicle } from "@/app/(dispatcher)/services/types";
 import { CENTRAL_DEPOT } from "@/app/(dispatcher)/services/dispatcherService";
