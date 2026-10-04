@@ -177,7 +177,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F7F6F2] text-[#1C1C1C] flex font-sans antialiased selection:bg-[#F5C242]/30">
+    <>
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 bg-[#1C1C1C] text-white px-4 py-3 rounded-2xl shadow-xl border border-neutral-800 flex items-center gap-3 animate-bounce">
           <div className="w-6 h-6 rounded-full bg-[#F5C242] text-neutral-900 flex items-center justify-center shrink-0">
@@ -192,619 +192,522 @@ export default function Dashboard() {
           </button>
         </div>
       )}
-
-      {/* 1. LEFT SIDEBAR */}
-      <aside className="w-60 bg-white border-r border-[#ECEAE4] flex flex-col justify-between p-5 shrink-0 select-none">
-        <div>
-          <div
-            onClick={() => setActiveNav("Store Overview")}
-            className="flex items-center gap-3 px-1.5 py-1 cursor-pointer group"
-          >
-            <div className="bg-[#1C1C1C] w-9 h-9 rounded-xl flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform">
-              <div className="w-3.5 h-3.5 rounded-full bg-[#F5C242]" />
-            </div>
-            <span className="text-xl font-bold tracking-tight text-neutral-900">
-              Waypoint
-            </span>
-          </div>
-
-          <nav className="mt-8 space-y-1.5">
-            {[
-              { name: "Store Overview", icon: LayoutGrid },
-              { name: "Orders", icon: ShoppingBag },
-              { name: "Receiving", icon: Truck },
-              { name: "Alerts", icon: Bell, badge: 2 },
-              { name: "History", icon: History },
-            ].map((item) => {
-              const Icon = item.icon;
-              const isActive = activeNav === item.name;
-              return (
-                <button
-                  key={item.name}
-                  onClick={() => {
-                    setActiveNav(item.name);
-                    if (item.name === "Alerts") {
-                      setActiveModal("alerts");
-                    }
-                  }}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs transition-all ${
-                    isActive
-                      ? "bg-[#FDF6E2] text-neutral-900 font-semibold shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
-                      : "text-neutral-600 font-medium hover:bg-[#F7F6F2] hover:text-neutral-900"
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <Icon
-                      className={`w-4 h-4 ${
-                        isActive
-                          ? "text-neutral-900 stroke-[2.2]"
-                          : "text-neutral-500"
-                      }`}
-                    />
-                    <span>{item.name}</span>
-                  </div>
-                  {item.badge && (
-                    <span className="bg-[#F59E0B] text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-
-        <div className="pt-4">
-          <button
-            onClick={() => showToast("Store settings panel is up to date.")}
-            className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium text-neutral-600 hover:bg-[#F7F6F2] hover:text-neutral-900 transition-colors mb-4"
-          >
-            <Settings className="w-4 h-4 text-neutral-500" />
-            <span>Settings</span>
-          </button>
-
-          <div className="bg-[#1C1C1C] text-white p-4 rounded-2xl shadow-sm">
-            <p className="text-[11px] text-neutral-400 font-normal">
-              Need help?
-            </p>
-            <p className="text-xs font-semibold mt-0.5 mb-3.5 text-white">
-              Support is online
-            </p>
+      <header className="h-16 bg-white border-b border-[#ECEAE4] px-8 flex items-center justify-between sticky top-0 z-30">
+        <div className="flex items-center gap-6">
+          <div className="relative">
             <button
-              onClick={() => setActiveModal("support")}
-              className="w-full bg-white text-neutral-900 font-semibold text-xs py-2.5 rounded-xl hover:bg-neutral-100 active:scale-[0.99] transition-all shadow-sm"
+              onClick={() => setStoreDropdownOpen((o) => !o)}
+              className="flex items-center gap-3 py-1 px-1.5 rounded-xl hover:bg-[#F7F6F2] transition-colors text-left"
             >
-              Contact support
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      {/* MAIN VIEWPORT COLUMN */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 bg-white border-b border-[#ECEAE4] px-8 flex items-center justify-between sticky top-0 z-30">
-          <div className="flex items-center gap-6">
-            <div className="relative">
-              <button
-                onClick={() => setStoreDropdownOpen((o) => !o)}
-                className="flex items-center gap-3 py-1 px-1.5 rounded-xl hover:bg-[#F7F6F2] transition-colors text-left"
-              >
-                <div className="bg-[#F5C242] text-neutral-900 font-bold text-xs w-9 h-9 rounded-xl flex items-center justify-center shadow-xs">
-                  {selectedStore.code}
-                </div>
-                <div className="leading-tight">
-                  <div className="text-xs font-bold text-neutral-900">
-                    {selectedStore.name}
-                  </div>
-                  <div className="text-[11px] text-neutral-400">
-                    {selectedStore.location}
-                  </div>
-                </div>
-                <ChevronRight className="w-4 h-4 text-neutral-400 ml-1" />
-              </button>
-
-              {storeDropdownOpen && (
-                <div className="absolute left-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-[#ECEAE4] py-2 z-40">
-                  <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
-                    Switch Store Location
-                  </div>
-                  {STORES.map((st) => (
-                    <button
-                      key={st.id}
-                      onClick={() => {
-                        setSelectedStore(st);
-                        setStoreDropdownOpen(false);
-                        showToast(`Switched view to ${st.name}`);
-                      }}
-                      className={`w-full px-3 py-2 text-left flex items-center justify-between hover:bg-[#F7F6F2] transition-colors ${
-                        selectedStore.id === st.id
-                          ? "bg-[#FDF6E2]/60 font-semibold"
-                          : ""
-                      }`}
-                    >
-                      <div>
-                        <div className="text-xs font-semibold text-neutral-900">
-                          {st.name}
-                        </div>
-                        <div className="text-[11px] text-neutral-400">
-                          {st.location}
-                        </div>
-                      </div>
-                      {selectedStore.id === st.id && (
-                        <Check className="w-3.5 h-3.5 text-amber-600" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="bg-[#F5F4F0] rounded-full px-4 py-2 w-80 lg:w-96 flex items-center gap-2.5 border border-transparent focus-within:border-[#F5C242] focus-within:bg-white transition-all">
-              <Search className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search orders, vehicles, products..."
-                className="bg-transparent text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none w-full"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery("")}
-                  className="text-neutral-400 hover:text-neutral-700"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-5">
-            <div className="hidden sm:flex items-center gap-2 text-xs text-neutral-500 font-medium">
-              <Clock className="w-3.5 h-3.5 text-neutral-400" />
-              <span>Sunday, September 27</span>
-            </div>
-
-            <button
-              onClick={() => setActiveModal("alerts")}
-              className="relative w-9 h-9 rounded-xl border border-[#ECEAE4] bg-[#F7F6F2]/70 hover:bg-[#F7F6F2] flex items-center justify-center text-neutral-700 transition-colors"
-              title="Notifications"
-            >
-              <Bell className="w-4 h-4" />
-              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[#F59E0B] ring-2 ring-white" />
-            </button>
-
-            <div
-              onClick={() =>
-                showToast("Logged in as Kavindu Perera (Store Manager)")
-              }
-              className="flex items-center gap-2.5 cursor-pointer pl-1"
-            >
-              <div className="bg-[#1C1C1C] text-white text-[11px] font-semibold w-9 h-9 rounded-full flex items-center justify-center">
-                KP
+              <div className="bg-[#F5C242] text-neutral-900 font-bold text-xs w-9 h-9 rounded-xl flex items-center justify-center shadow-xs">
+                {selectedStore.code}
               </div>
-              <div className="leading-tight hidden md:block">
+              <div className="leading-tight">
                 <div className="text-xs font-bold text-neutral-900">
-                  Kavindu Perera
+                  {selectedStore.name}
                 </div>
                 <div className="text-[11px] text-neutral-400">
-                  Store Manager
+                  {selectedStore.location}
                 </div>
               </div>
-            </div>
-          </div>
-        </header>
-
-        <section className="bg-[#1C1C1C] text-white px-8 py-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <div className="text-[10px] font-semibold tracking-widest text-[#F5C242] uppercase">
-              SUNDAY • SEPTEMBER 27
-            </div>
-            <h1 className="text-2xl font-bold mt-1 tracking-tight text-white">
-              Good morning, Kavindu
-            </h1>
-            <p className="text-xs text-neutral-400 mt-1">
-              Here is what is happening at {selectedStore.name} today
-            </p>
-          </div>
-
-          <div>
-            <button
-              onClick={() => setActiveModal("create-order")}
-              className="bg-[#F5C242] hover:bg-[#eab308] active:scale-[0.99] text-neutral-900 font-semibold text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-sm transition-all cursor-pointer"
-            >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
-              <span>Create new order</span>
+              <ChevronRight className="w-4 h-4 text-neutral-400 ml-1" />
             </button>
-          </div>
-        </section>
 
-        <main className="p-8 space-y-6 max-w-[1400px] w-full mx-auto">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div
-              onClick={() => setActiveModal("track-delivery")}
-              className="bg-white px-5 py-4 rounded-2xl border border-[#ECEAE4] flex items-center justify-between cursor-pointer hover:shadow-md hover:border-neutral-300 transition-all group"
-            >
-              <div className="flex items-center gap-4">
-                <div className="bg-[#FDF6E2] text-amber-700 w-11 h-11 rounded-xl flex items-center justify-center shrink-0">
-                  <Truck className="w-5 h-5" />
+            {storeDropdownOpen && (
+              <div className="absolute left-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-[#ECEAE4] py-2 z-40">
+                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                  Switch Store Location
                 </div>
-                <div>
-                  <div className="text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
-                    TODAY&apos;S DELIVERIES
-                  </div>
-                  <div className="flex items-baseline mt-0.5">
-                    <span className="text-2xl font-bold text-neutral-900">
-                      4
-                    </span>
-                    <span className="text-xs text-neutral-400 ml-2">
-                      Next at 7:42 AM
-                    </span>
-                  </div>
-                </div>
+                {STORES.map((st) => (
+                  <button
+                    key={st.id}
+                    onClick={() => {
+                      setSelectedStore(st);
+                      setStoreDropdownOpen(false);
+                      showToast(`Switched view to ${st.name}`);
+                    }}
+                    className={`w-full px-3 py-2 text-left flex items-center justify-between hover:bg-[#F7F6F2] transition-colors ${
+                      selectedStore.id === st.id
+                        ? "bg-[#FDF6E2]/60 font-semibold"
+                        : ""
+                    }`}
+                  >
+                    <div>
+                      <div className="text-xs font-semibold text-neutral-900">
+                        {st.name}
+                      </div>
+                      <div className="text-[11px] text-neutral-400">
+                        {st.location}
+                      </div>
+                    </div>
+                    {selectedStore.id === st.id && (
+                      <Check className="w-3.5 h-3.5 text-amber-600" />
+                    )}
+                  </button>
+                ))}
               </div>
-              <ChevronRight className="w-4 h-4 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
-            </div>
-
-            <div
-              onClick={() =>
-                showToast(
-                  "12 deliveries (428 items) confirmed this week with 99.4% accuracy."
-                )
-              }
-              className="bg-white px-5 py-4 rounded-2xl border border-[#ECEAE4] flex items-center justify-between cursor-pointer hover:shadow-md hover:border-neutral-300 transition-all group"
-            >
-              <div className="flex items-center gap-4">
-                <div className="bg-emerald-50 text-emerald-600 w-11 h-11 rounded-xl flex items-center justify-center shrink-0">
-                  <Check className="w-5 h-5 stroke-[2.5]" />
-                </div>
-                <div>
-                  <div className="text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
-                    RECEIVED THIS WEEK
-                  </div>
-                  <div className="flex items-baseline mt-0.5">
-                    <span className="text-2xl font-bold text-neutral-900">
-                      12
-                    </span>
-                    <span className="text-xs text-neutral-400 ml-2">
-                      428 items confirmed
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <ChevronRight className="w-4 h-4 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
-            </div>
-
-            <div
-              onClick={() => setActiveModal("alerts")}
-              className="bg-white px-5 py-4 rounded-2xl border border-[#ECEAE4] flex items-center justify-between cursor-pointer hover:shadow-md hover:border-neutral-300 transition-all group"
-            >
-              <div className="flex items-center gap-4">
-                <div className="bg-amber-50 text-amber-600 w-11 h-11 rounded-xl flex items-center justify-center shrink-0">
-                  <TriangleAlert className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
-                    NEEDS ATTENTION
-                  </div>
-                  <div className="flex items-baseline mt-0.5">
-                    <span className="text-2xl font-bold text-neutral-900">
-                      2
-                    </span>
-                    <span className="text-xs text-neutral-400 ml-2">
-                      1 order deferred
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <ChevronRight className="w-4 h-4 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
-            </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            <div className="lg:col-span-8 space-y-6">
-              <div className="bg-white p-6 rounded-2xl border border-[#ECEAE4] shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h2 className="text-base font-bold text-neutral-900">
-                      Next delivery
-                    </h2>
-                    <p className="text-xs text-neutral-400 mt-0.5">
-                      Live arrival information for your receiving team
-                    </p>
-                  </div>
-                  <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-3 py-1 rounded-full flex items-center gap-1.5 tracking-wide uppercase">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-                    ON SCHEDULE
+          <div className="bg-[#F5F4F0] rounded-full px-4 py-2 w-80 lg:w-96 flex items-center gap-2.5 border border-transparent focus-within:border-[#F5C242] focus-within:bg-white transition-all">
+            <Search className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search orders, vehicles, products..."
+              className="bg-transparent text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none w-full"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="text-neutral-400 hover:text-neutral-700"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-5">
+          <div className="hidden sm:flex items-center gap-2 text-xs text-neutral-500 font-medium">
+            <Clock className="w-3.5 h-3.5 text-neutral-400" />
+            <span>Sunday, September 27</span>
+          </div>
+
+          <button
+            onClick={() => setActiveModal("alerts")}
+            className="relative w-9 h-9 rounded-xl border border-[#ECEAE4] bg-[#F7F6F2]/70 hover:bg-[#F7F6F2] flex items-center justify-center text-neutral-700 transition-colors"
+            title="Notifications"
+          >
+            <Bell className="w-4 h-4" />
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[#F59E0B] ring-2 ring-white" />
+          </button>
+
+          <div
+            onClick={() =>
+              showToast("Logged in as Kavindu Perera (Store Manager)")
+            }
+            className="flex items-center gap-2.5 cursor-pointer pl-1"
+          >
+            <div className="bg-[#1C1C1C] text-white text-[11px] font-semibold w-9 h-9 rounded-full flex items-center justify-center">
+              KP
+            </div>
+            <div className="leading-tight hidden md:block">
+              <div className="text-xs font-bold text-neutral-900">
+                Kavindu Perera
+              </div>
+              <div className="text-[11px] text-neutral-400">Store Manager</div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section className="bg-[#1C1C1C] text-white px-8 py-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <div className="text-[10px] font-semibold tracking-widest text-[#F5C242] uppercase">
+            SUNDAY • SEPTEMBER 27
+          </div>
+          <h1 className="text-2xl font-bold mt-1 tracking-tight text-white">
+            Good morning, Kavindu
+          </h1>
+          <p className="text-xs text-neutral-400 mt-1">
+            Here is what is happening at {selectedStore.name} today
+          </p>
+        </div>
+
+        <div>
+          <button
+            onClick={() => setActiveModal("create-order")}
+            className="bg-[#F5C242] hover:bg-[#eab308] active:scale-[0.99] text-neutral-900 font-semibold text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4 stroke-[2.5]" />
+            <span>Create new order</span>
+          </button>
+        </div>
+      </section>
+
+      <main className="p-8 space-y-6 max-w-[1400px] w-full mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div
+            onClick={() => setActiveModal("track-delivery")}
+            className="bg-white px-5 py-4 rounded-2xl border border-[#ECEAE4] flex items-center justify-between cursor-pointer hover:shadow-md hover:border-neutral-300 transition-all group"
+          >
+            <div className="flex items-center gap-4">
+              <div className="bg-[#FDF6E2] text-amber-700 w-11 h-11 rounded-xl flex items-center justify-center shrink-0">
+                <Truck className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
+                  TODAY&apos;S DELIVERIES
+                </div>
+                <div className="flex items-baseline mt-0.5">
+                  <span className="text-2xl font-bold text-neutral-900">4</span>
+                  <span className="text-xs text-neutral-400 ml-2">
+                    Next at 7:42 AM
                   </span>
                 </div>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
+          </div>
 
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-12 rounded-2xl overflow-hidden border border-[#ECEAE4] bg-[#FCFBF9]">
-                  <div className="md:col-span-5 relative min-h-[215px] bg-neutral-900 overflow-hidden">
-                    <img
-                      src="https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?auto=format&fit=crop&w=900&q=80"
-                      alt="Delivery Truck TRK-024 on highway"
-                      className="w-full h-full object-cover object-center transform hover:scale-105 transition-transform duration-700"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
-                    <div className="absolute bottom-3 left-3 bg-white/95 backdrop-blur-xs text-neutral-900 text-[9px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-sm tracking-wider uppercase">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 -ml-3" />
-                      LIVE TRACKING
+          <div
+            onClick={() =>
+              showToast(
+                "12 deliveries (428 items) confirmed this week with 99.4% accuracy."
+              )
+            }
+            className="bg-white px-5 py-4 rounded-2xl border border-[#ECEAE4] flex items-center justify-between cursor-pointer hover:shadow-md hover:border-neutral-300 transition-all group"
+          >
+            <div className="flex items-center gap-4">
+              <div className="bg-emerald-50 text-emerald-600 w-11 h-11 rounded-xl flex items-center justify-center shrink-0">
+                <Check className="w-5 h-5 stroke-[2.5]" />
+              </div>
+              <div>
+                <div className="text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
+                  RECEIVED THIS WEEK
+                </div>
+                <div className="flex items-baseline mt-0.5">
+                  <span className="text-2xl font-bold text-neutral-900">
+                    12
+                  </span>
+                  <span className="text-xs text-neutral-400 ml-2">
+                    428 items confirmed
+                  </span>
+                </div>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
+          </div>
+
+          <div
+            onClick={() => setActiveModal("alerts")}
+            className="bg-white px-5 py-4 rounded-2xl border border-[#ECEAE4] flex items-center justify-between cursor-pointer hover:shadow-md hover:border-neutral-300 transition-all group"
+          >
+            <div className="flex items-center gap-4">
+              <div className="bg-amber-50 text-amber-600 w-11 h-11 rounded-xl flex items-center justify-center shrink-0">
+                <TriangleAlert className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
+                  NEEDS ATTENTION
+                </div>
+                <div className="flex items-baseline mt-0.5">
+                  <span className="text-2xl font-bold text-neutral-900">2</span>
+                  <span className="text-xs text-neutral-400 ml-2">
+                    1 order deferred
+                  </span>
+                </div>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <div className="lg:col-span-8 space-y-6">
+            <div className="bg-white p-6 rounded-2xl border border-[#ECEAE4] shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-base font-bold text-neutral-900">
+                    Next delivery
+                  </h2>
+                  <p className="text-xs text-neutral-400 mt-0.5">
+                    Live arrival information for your receiving team
+                  </p>
+                </div>
+                <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-3 py-1 rounded-full flex items-center gap-1.5 tracking-wide uppercase">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                  ON SCHEDULE
+                </span>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-12 rounded-2xl overflow-hidden border border-[#ECEAE4] bg-[#FCFBF9]">
+                <div className="md:col-span-5 relative min-h-[215px] bg-neutral-900 overflow-hidden">
+                  <img
+                    src="https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?auto=format&fit=crop&w=900&q=80"
+                    alt="Delivery Truck TRK-024 on highway"
+                    className="w-full h-full object-cover object-center transform hover:scale-105 transition-transform duration-700"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
+                  <div className="absolute bottom-3 left-3 bg-white/95 backdrop-blur-xs text-neutral-900 text-[9px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-sm tracking-wider uppercase">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 -ml-3" />
+                    LIVE TRACKING
+                  </div>
+                </div>
+
+                <div className="md:col-span-7 p-5 flex flex-col justify-between">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold">
+                        FRESH CHILLED DELIVERY
+                      </div>
+                      <div className="text-xl font-bold text-neutral-900 mt-0.5">
+                        TRK-024
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold">
+                        ETA
+                      </div>
+                      <div className="text-lg font-bold text-neutral-900 mt-0.5">
+                        7:42 AM
+                      </div>
                     </div>
                   </div>
 
-                  <div className="md:col-span-7 p-5 flex flex-col justify-between">
-                    <div className="flex items-start justify-between">
+                  <div className="my-5">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#F5C242] ring-4 ring-[#F5C242]/20 shrink-0" />
                       <div>
-                        <div className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold">
-                          FRESH CHILLED DELIVERY
+                        <div className="text-xs font-semibold text-neutral-800">
+                          6.4 km away
                         </div>
-                        <div className="text-xl font-bold text-neutral-900 mt-0.5">
-                          TRK-024
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-[10px] uppercase tracking-wider text-neutral-400 font-semibold">
-                          ETA
-                        </div>
-                        <div className="text-lg font-bold text-neutral-900 mt-0.5">
-                          7:42 AM
+                        <div className="text-[11px] text-neutral-400 mt-0.5">
+                          16 pallets · 214 cases · Dock Bay 02
                         </div>
                       </div>
                     </div>
+                    <div className="w-full h-1.5 bg-[#EFECE6] rounded-full mt-3.5 overflow-hidden">
+                      <div className="w-[68%] h-full bg-[#F5C242] rounded-full" />
+                    </div>
+                  </div>
 
-                    <div className="my-5">
-                      <div className="flex items-center gap-2.5">
-                        <span className="w-2.5 h-2.5 rounded-full bg-[#F5C242] ring-4 ring-[#F5C242]/20 shrink-0" />
+                  <div className="flex items-center justify-end gap-2.5 pt-1">
+                    <button
+                      onClick={() => setActiveModal("prepare-receiving")}
+                      className="px-4 py-2 rounded-xl border border-[#E5E2DC] bg-white text-xs font-semibold text-neutral-700 hover:bg-neutral-50 transition-colors cursor-pointer"
+                    >
+                      Prepare receiving
+                    </button>
+                    <button
+                      onClick={() => setActiveModal("track-delivery")}
+                      className="px-4 py-2 rounded-xl bg-[#F5C242] hover:bg-[#eab308] text-xs font-semibold text-neutral-900 flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                    >
+                      <span>Track delivery</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl border border-[#ECEAE4] shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-neutral-900">
+                    Today&apos;s activity
+                  </h2>
+                  <p className="text-xs text-neutral-400 mt-0.5">
+                    Your most recent store operations
+                  </p>
+                </div>
+                <button
+                  onClick={() =>
+                    showToast(
+                      `Showing all ${activities.length} store operation logs.`
+                    )
+                  }
+                  className="text-xs font-semibold text-neutral-600 hover:text-neutral-900 flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <span>View all</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="divide-y divide-[#ECEAE4] mt-4">
+                {filteredActivities.map((item) => {
+                  const isComplete = item.status === "Complete";
+                  const isReview = item.status === "Review";
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => setSelectedActivity(item)}
+                      className="py-3.5 first:pt-2 last:pb-1 flex items-center justify-between gap-4 hover:bg-[#FAF9F6] -mx-2 px-2 rounded-xl transition-colors cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3.5">
+                        {item.type === "received" && (
+                          <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                            <Check className="w-4 h-4 stroke-[2.5]" />
+                          </div>
+                        )}
+                        {item.type === "deferred" && (
+                          <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                            <TriangleAlert className="w-4 h-4" />
+                          </div>
+                        )}
+                        {item.type === "submitted" && (
+                          <div className="w-9 h-9 rounded-xl bg-[#FDF6E2] text-amber-700 flex items-center justify-center shrink-0">
+                            <ShoppingBag className="w-4 h-4" />
+                          </div>
+                        )}
                         <div>
-                          <div className="text-xs font-semibold text-neutral-800">
-                            6.4 km away
+                          <div className="text-xs font-bold text-neutral-900">
+                            {item.title}
                           </div>
                           <div className="text-[11px] text-neutral-400 mt-0.5">
-                            16 pallets · 214 cases · Dock Bay 02
+                            {item.subtitle}
                           </div>
                         </div>
                       </div>
-                      <div className="w-full h-1.5 bg-[#EFECE6] rounded-full mt-3.5 overflow-hidden">
-                        <div className="w-[68%] h-full bg-[#F5C242] rounded-full" />
-                      </div>
+
+                      {isComplete && (
+                        <span className="bg-emerald-50 text-emerald-700 text-[11px] font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                          Complete
+                        </span>
+                      )}
+                      {isReview && (
+                        <span className="bg-amber-50 text-amber-700 text-[11px] font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
+                          Review
+                        </span>
+                      )}
+                      {!isComplete && !isReview && (
+                        <span className="bg-[#FDF6E2] text-amber-800 text-[11px] font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
+                          {item.status}
+                        </span>
+                      )}
                     </div>
-
-                    <div className="flex items-center justify-end gap-2.5 pt-1">
-                      <button
-                        onClick={() => setActiveModal("prepare-receiving")}
-                        className="px-4 py-2 rounded-xl border border-[#E5E2DC] bg-white text-xs font-semibold text-neutral-700 hover:bg-neutral-50 transition-colors cursor-pointer"
-                      >
-                        Prepare receiving
-                      </button>
-                      <button
-                        onClick={() => setActiveModal("track-delivery")}
-                        className="px-4 py-2 rounded-xl bg-[#F5C242] hover:bg-[#eab308] text-xs font-semibold text-neutral-900 flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-                      >
-                        <span>Track delivery</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-2xl border border-[#ECEAE4] shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-base font-bold text-neutral-900">
-                      Today&apos;s activity
-                    </h2>
-                    <p className="text-xs text-neutral-400 mt-0.5">
-                      Your most recent store operations
-                    </p>
-                  </div>
-                  <button
-                    onClick={() =>
-                      showToast(
-                        `Showing all ${activities.length} store operation logs.`
-                      )
-                    }
-                    className="text-xs font-semibold text-neutral-600 hover:text-neutral-900 flex items-center gap-1 transition-colors cursor-pointer"
-                  >
-                    <span>View all</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                <div className="divide-y divide-[#ECEAE4] mt-4">
-                  {filteredActivities.map((item) => {
-                    const isComplete = item.status === "Complete";
-                    const isReview = item.status === "Review";
-                    return (
-                      <div
-                        key={item.id}
-                        onClick={() => setSelectedActivity(item)}
-                        className="py-3.5 first:pt-2 last:pb-1 flex items-center justify-between gap-4 hover:bg-[#FAF9F6] -mx-2 px-2 rounded-xl transition-colors cursor-pointer"
-                      >
-                        <div className="flex items-center gap-3.5">
-                          {item.type === "received" && (
-                            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                              <Check className="w-4 h-4 stroke-[2.5]" />
-                            </div>
-                          )}
-                          {item.type === "deferred" && (
-                            <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                              <TriangleAlert className="w-4 h-4" />
-                            </div>
-                          )}
-                          {item.type === "submitted" && (
-                            <div className="w-9 h-9 rounded-xl bg-[#FDF6E2] text-amber-700 flex items-center justify-center shrink-0">
-                              <ShoppingBag className="w-4 h-4" />
-                            </div>
-                          )}
-                          <div>
-                            <div className="text-xs font-bold text-neutral-900">
-                              {item.title}
-                            </div>
-                            <div className="text-[11px] text-neutral-400 mt-0.5">
-                              {item.subtitle}
-                            </div>
-                          </div>
-                        </div>
-
-                        {isComplete && (
-                          <span className="bg-emerald-50 text-emerald-700 text-[11px] font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-                            Complete
-                          </span>
-                        )}
-                        {isReview && (
-                          <span className="bg-amber-50 text-amber-700 text-[11px] font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
-                            Review
-                          </span>
-                        )}
-                        {!isComplete && !isReview && (
-                          <span className="bg-[#FDF6E2] text-amber-800 text-[11px] font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
-                            {item.status}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <div className="lg:col-span-4 space-y-6">
-              <div className="bg-white p-6 rounded-2xl border border-[#ECEAE4] shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-                <div className="flex items-start justify-between">
-                  <div className="bg-[#F5C242] text-neutral-900 w-10 h-10 rounded-xl flex items-center justify-center shadow-2xs">
-                    <Clock className="w-5 h-5" />
-                  </div>
-                  <div className="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-xl flex flex-col items-center justify-center leading-tight">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 mb-0.5" />
-                    <span className="text-[10px] font-bold">Open</span>
-                  </div>
-                </div>
-
-                <div className="mt-4">
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
-                    ORDER CUTOFF
-                  </div>
-                  <div className="text-xl font-bold text-neutral-900 mt-1">
-                    2h 18m remaining
-                  </div>
-                  <p className="text-xs text-neutral-400 mt-0.5">
-                    Submit by 4:00 PM for tomorrow&apos;s planning cycle
-                  </p>
-                  <div className="w-full h-1.5 bg-[#EFECE6] rounded-full my-4 overflow-hidden">
-                    <div className="w-[72%] h-full bg-[#F5C242] rounded-full" />
-                  </div>
-
-                  <button
-                    onClick={() => setActiveModal("create-order")}
-                    className="w-full py-2.5 rounded-xl bg-[#F5C242] hover:bg-[#eab308] active:scale-[0.99] text-neutral-900 font-semibold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                  >
-                    <span>Start an order</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-2xl border border-[#ECEAE4] shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h2 className="text-base font-bold text-neutral-900">
-                      Store readiness
-                    </h2>
-                    <p className="text-xs text-neutral-400 mt-0.5">
-                      For today&apos;s arrivals
-                    </p>
-                  </div>
-                  <span className="text-sm font-bold text-emerald-600">
-                    {readinessPercentage}%
-                  </span>
-                </div>
-
-                <div className="space-y-3 mt-4">
-                  {readinessItems.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => toggleReadiness(item.id)}
-                      className="w-full flex items-center gap-3 text-left group cursor-pointer"
-                    >
-                      <div
-                        className={`w-5 h-5 rounded-full flex items-center justify-center transition-colors ${
-                          item.checked
-                            ? "bg-emerald-50 text-emerald-600"
-                            : "bg-neutral-100 text-neutral-300"
-                        }`}
-                      >
-                        <Check className="w-3 h-3 stroke-[2.5]" />
-                      </div>
-                      <span
-                        className={`text-xs font-medium transition-colors ${
-                          item.checked
-                            ? "text-neutral-700"
-                            : "text-neutral-400 line-through"
-                        }`}
-                      >
-                        {item.label}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-2xl border border-[#ECEAE4] shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-                <h2 className="text-base font-bold text-neutral-900 mb-3">
-                  Quick actions
-                </h2>
-                <div className="divide-y divide-[#ECEAE4]">
-                  <button
-                    onClick={() => setActiveModal("create-order")}
-                    className="w-full py-3 first:pt-1 flex items-center justify-between hover:bg-[#FAF9F6] -mx-2 px-2 rounded-xl transition-colors text-left group cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-[#F5F4F0] text-neutral-700 flex items-center justify-center">
-                        <ShoppingBag className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold text-neutral-900">
-                          Create order
-                        </div>
-                        <div className="text-[11px] text-neutral-400">
-                          Before today&apos;s cutoff
-                        </div>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
-                  </button>
-
-                  <button
-                    onClick={() => setActiveModal("alerts")}
-                    className="w-full py-3 last:pb-1 flex items-center justify-between hover:bg-[#FAF9F6] -mx-2 px-2 rounded-xl transition-colors text-left group cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-[#F5F4F0] text-neutral-700 flex items-center justify-center">
-                        <Bell className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold text-neutral-900">
-                          Review alerts
-                        </div>
-                        <div className="text-[11px] text-neutral-400">
-                          2 need attention
-                        </div>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
-                  </button>
-                </div>
+                  );
+                })}
               </div>
             </div>
           </div>
-        </main>
-      </div>
+
+          <div className="lg:col-span-4 space-y-6">
+            <div className="bg-white p-6 rounded-2xl border border-[#ECEAE4] shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+              <div className="flex items-start justify-between">
+                <div className="bg-[#F5C242] text-neutral-900 w-10 h-10 rounded-xl flex items-center justify-center shadow-2xs">
+                  <Clock className="w-5 h-5" />
+                </div>
+                <div className="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-xl flex flex-col items-center justify-center leading-tight">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 mb-0.5" />
+                  <span className="text-[10px] font-bold">Open</span>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                  ORDER CUTOFF
+                </div>
+                <div className="text-xl font-bold text-neutral-900 mt-1">
+                  2h 18m remaining
+                </div>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Submit by 4:00 PM for tomorrow&apos;s planning cycle
+                </p>
+                <div className="w-full h-1.5 bg-[#EFECE6] rounded-full my-4 overflow-hidden">
+                  <div className="w-[72%] h-full bg-[#F5C242] rounded-full" />
+                </div>
+
+                <button
+                  onClick={() => setActiveModal("create-order")}
+                  className="w-full py-2.5 rounded-xl bg-[#F5C242] hover:bg-[#eab308] active:scale-[0.99] text-neutral-900 font-semibold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                >
+                  <span>Start an order</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl border border-[#ECEAE4] shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-neutral-900">
+                    Store readiness
+                  </h2>
+                  <p className="text-xs text-neutral-400 mt-0.5">
+                    For today&apos;s arrivals
+                  </p>
+                </div>
+                <span className="text-sm font-bold text-emerald-600">
+                  {readinessPercentage}%
+                </span>
+              </div>
+
+              <div className="space-y-3 mt-4">
+                {readinessItems.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => toggleReadiness(item.id)}
+                    className="w-full flex items-center gap-3 text-left group cursor-pointer"
+                  >
+                    <div
+                      className={`w-5 h-5 rounded-full flex items-center justify-center transition-colors ${
+                        item.checked
+                          ? "bg-emerald-50 text-emerald-600"
+                          : "bg-neutral-100 text-neutral-300"
+                      }`}
+                    >
+                      <Check className="w-3 h-3 stroke-[2.5]" />
+                    </div>
+                    <span
+                      className={`text-xs font-medium transition-colors ${
+                        item.checked
+                          ? "text-neutral-700"
+                          : "text-neutral-400 line-through"
+                      }`}
+                    >
+                      {item.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl border border-[#ECEAE4] shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+              <h2 className="text-base font-bold text-neutral-900 mb-3">
+                Quick actions
+              </h2>
+              <div className="divide-y divide-[#ECEAE4]">
+                <button
+                  onClick={() => setActiveModal("create-order")}
+                  className="w-full py-3 first:pt-1 flex items-center justify-between hover:bg-[#FAF9F6] -mx-2 px-2 rounded-xl transition-colors text-left group cursor-pointer"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-[#F5F4F0] text-neutral-700 flex items-center justify-center">
+                      <ShoppingBag className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-neutral-900">
+                        Create order
+                      </div>
+                      <div className="text-[11px] text-neutral-400">
+                        Before today&apos;s cutoff
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
+                </button>
+
+                <button
+                  onClick={() => setActiveModal("alerts")}
+                  className="w-full py-3 last:pb-1 flex items-center justify-between hover:bg-[#FAF9F6] -mx-2 px-2 rounded-xl transition-colors text-left group cursor-pointer"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-[#F5F4F0] text-neutral-700 flex items-center justify-center">
+                      <Bell className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-neutral-900">
+                        Review alerts
+                      </div>
+                      <div className="text-[11px] text-neutral-400">
+                        2 need attention
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
 
       {/* MODAL: CREATE NEW ORDER */}
       {activeModal === "create-order" && (
@@ -1221,6 +1124,6 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
