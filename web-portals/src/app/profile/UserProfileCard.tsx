@@ -11,18 +11,13 @@ import {
   HelpCircle, 
   LogOut, 
   ChevronRight, 
-  LayoutGrid, 
   ShoppingBag, 
   Truck, 
-  Warehouse, 
-  Store, 
   Loader2, 
-  Phone, 
-  Mail, 
   AlertCircle
 } from "lucide-react";
 import { useUserProfile } from "./useUserProfile";
-import { UserRole, UserActivity } from "./types";
+import { UserActivity } from "./types";
 import { getRoleConfig } from "./roleConfig";
 import { formatActivityTime } from "./activityLogger";
 

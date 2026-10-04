@@ -140,12 +140,12 @@ async function updateProfile(identifier, updates) {
   });
 }
 
-async function addProfile(email, password, fullName, role, bay = "Bay 04", station = "Station #04", shift = "Morning Shift (06:00 - 14:00)") {
+async function addProfile(email, password, fullName, role, bay = null, station = null, shift = null) {
   console.log(`\n➕ Creating new ${role} user: ${email}...`);
 
   const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
     email,
-    password: password || "Waypoint@2026",
+    password,
     email_confirm: true,
     user_metadata: {
       full_name: fullName,
@@ -232,9 +232,9 @@ async function main() {
     case "add":
     case "add-user": {
       const [email, password, fullName, role, bay, station, shift] = args;
-      if (!email || !fullName || !role) {
+      if (!email || !password || password.length < 8 || !fullName || !role) {
         console.log("Usage: node scripts/db.js add <email> <password> <fullName> <role> [bay] [station] [shift]");
-        console.log("Example: node scripts/db.js add loader2@waypoint.com Waypoint@2026 \"Nimal Perera\" loader \"Bay 02\" \"Station #02\"");
+        console.log("Example: node scripts/db.js add loader2@waypoint.com '<min 8 char password>' \"Full Name\" loader \"Bay 02\" \"Station #02\"");
         return;
       }
       await addProfile(email, password, fullName, role, bay, station, shift);

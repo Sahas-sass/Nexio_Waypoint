@@ -40,10 +40,7 @@ function formatRelativeTime(dateStr?: string | null): string {
   }
 }
 
-export async function fetchRecentUserActivities(
-  role: string,
-  _userId?: string
-): Promise<UserActivity[]> {
+export async function fetchRecentUserActivities(role: string): Promise<UserActivity[]> {
   const supabase = getSupabaseClient();
   const normalizedRole = (role || "").toLowerCase().trim();
 
@@ -149,7 +146,7 @@ export async function fetchCurrentUserProfile(): Promise<UserProfile> {
     activities = profile.activities;
   } else {
     try {
-      activities = await fetchRecentUserActivities(role, user.id);
+      activities = await fetchRecentUserActivities(role);
     } catch {
       activities = [
         {
