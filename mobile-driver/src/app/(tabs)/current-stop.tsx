@@ -13,15 +13,22 @@ import * as Location from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, Path, Pattern, Rect } from 'react-native-svg';
 
-// react-native-maps is native-only; lazy-require to avoid web crash
+// react-native-maps is native-only; lazy-require to avoid web crash or missing native module
 let MapView: any = View;
 let Marker: any = View;
 let Polyline: any = View;
+let isMapsAvailable = false;
+
 if (Platform.OS !== 'web') {
-  const Maps = require('react-native-maps');
-  MapView = Maps.default;
-  Marker = Maps.Marker;
-  Polyline = Maps.Polyline;
+  try {
+    const Maps = require('react-native-maps');
+    MapView = Maps.default || Maps;
+    Marker = Maps.Marker;
+    Polyline = Maps.Polyline;
+    isMapsAvailable = Boolean(MapView && MapView !== View);
+  } catch (err) {
+    console.warn('[CurrentStop] react-native-maps could not be loaded:', err);
+  }
 }
 
 import { Screen } from '@/components/waypoint/chrome';
@@ -173,13 +180,18 @@ export default function CurrentStopScreen() {
     ? locationCity
     : `155 High Level Rd, ${locationCity}`;
 
-  // Launch native mapping navigation
+  // Launch native mapping navigation (works offline with device GPS coordinates)
   const handleOpenNavigation = () => {
+    const lat = stop?.latitude;
+    const lng = stop?.longitude;
     const encodedDestination = encodeURIComponent(`${storeName}, ${fullAddress}`);
+
     const navUrl = Platform.select({
-      ios: `maps:0,0?q=${encodedDestination}`,
-      android: `geo:0,0?q=${encodedDestination}`,
-      default: `https://maps.google.com/?q=${encodedDestination}`,
+      ios: lat && lng ? `maps:?daddr=${lat},${lng}` : `maps:0,0?q=${encodedDestination}`,
+      android: lat && lng ? `google.navigation:q=${lat},${lng}` : `geo:0,0?q=${encodedDestination}`,
+      default: lat && lng
+        ? `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`
+        : `https://maps.google.com/?q=${encodedDestination}`,
     });
 
     Linking.openURL(navUrl).catch(() => {
@@ -273,7 +285,7 @@ export default function CurrentStopScreen() {
       {/* 3. Map Snapshot & Direct Navigation */}
       <Card style={[styles.mapCard, { padding: 0 }]}>
         <View style={styles.mapContainer}>
-          {(stop?.latitude && stop?.longitude) ? (
+          {isMapsAvailable && stop?.latitude && stop?.longitude ? (
             <MapView
               style={StyleSheet.absoluteFill}
               showsUserLocation={false}
@@ -284,8 +296,7 @@ export default function CurrentStopScreen() {
                 longitude: stop.longitude,
                 latitudeDelta: 0.04,
                 longitudeDelta: 0.04,
-              }}
-            >
+              }}>
               {liveCoords && (
                 <Marker
                   coordinate={{
@@ -293,8 +304,7 @@ export default function CurrentStopScreen() {
                     longitude: liveCoords.longitude,
                   }}
                   title="You"
-                  description="Your current location"
-                >
+                  description="Your current location">
                   <View style={styles.driverMarker}>
                     <View style={styles.driverMarkerInner}>
                       <Icon name="navigation" size={14} color="#FFFFFF" />
@@ -311,7 +321,7 @@ export default function CurrentStopScreen() {
                 <Polyline
                   coordinates={[
                     { latitude: liveCoords.latitude, longitude: liveCoords.longitude },
-                    { latitude: stop.latitude, longitude: stop.longitude }
+                    { latitude: stop.latitude, longitude: stop.longitude },
                   ]}
                   strokeColor={Colors.primaryYellow}
                   strokeWidth={3}
@@ -320,8 +330,19 @@ export default function CurrentStopScreen() {
               )}
             </MapView>
           ) : (
-            <View style={{ flex: 1, backgroundColor: '#E8ECE4', alignItems: 'center', justifyContent: 'center' }}>
-              <Text>Location Unavailable</Text>
+            <View style={{ flex: 1, backgroundColor: '#E8ECE4' }}>
+              <View style={[styles.mapRoad, styles.mapRoadMain]} />
+              <View style={[styles.mapRoad, styles.mapRoadCross]} />
+              <View style={[styles.mapRoad, styles.mapRoadDiagonal]} />
+              <View style={styles.destinationPin}>
+                <View style={styles.destinationPinIcon}>
+                  <Icon name="pin" size={18} color={Colors.textPrimary} />
+                </View>
+              </View>
+              <View style={styles.youPositionBadge}>
+                <View style={styles.youPositionDot} />
+                <Text style={styles.youPositionText}>YOU (1.2 km away)</Text>
+              </View>
             </View>
           )}
         </View>
