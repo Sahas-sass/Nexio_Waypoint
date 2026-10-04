@@ -45,6 +45,23 @@ export default function MoreScreen() {
     Alert.alert(title, message);
   };
 
+  const handleSignOut = () => {
+    Alert.alert(
+      'End Shift & Sign Out',
+      'Are you sure you want to end your current shift and return to the login screen?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: () => {
+            router.replace('/(auth)/login');
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <Screen>
       {/* Screen Title Row */}
@@ -292,6 +309,19 @@ export default function MoreScreen() {
           <Text style={styles.callDispatchText}>Call</Text>
         </Pressable>
       </LinearGradient>
+
+      {/* 5. End Shift & Sign Out */}
+      <Pressable
+        onPress={handleSignOut}
+        accessibilityRole="button"
+        accessibilityLabel="End Shift and Sign Out"
+        style={({ pressed }) => [
+          styles.signOutButton,
+          pressed && styles.signOutButtonPressed,
+        ]}>
+        <Icon name="logout" size={17} color="#DC2626" />
+        <Text style={styles.signOutButtonText}>End Shift &amp; Sign Out</Text>
+      </Pressable>
 
       {/* Version Tag */}
       <View style={styles.versionRow}>
@@ -693,6 +723,29 @@ const styles = StyleSheet.create({
     ...font(800),
     fontSize: 12,
     color: Colors.textPrimary,
+  },
+  signOutButton: {
+    minHeight: 48,
+    borderRadius: Radius.md,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1.5,
+    borderColor: '#FEE2E2',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 18,
+    marginBottom: 6,
+  },
+  signOutButtonPressed: {
+    backgroundColor: '#FEE2E2',
+    transform: [{ scale: 0.99 }],
+  },
+  signOutButtonText: {
+    ...font(800),
+    fontSize: 13,
+    color: '#DC2626',
+    letterSpacing: -0.2,
   },
   versionRow: {
     flexDirection: 'row',
