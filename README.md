@@ -15,7 +15,7 @@ See [`docs/architecture.md`](docs/architecture.md), [`docs/data-model.md`](docs/
 
 | | |
 |---|---|
-| Web portals | _TBD – add the deployed URL_ |
+| Web portals | https://nexio-waypoint.vercel.app/login |
 | Driver app | _TBD – web build URL or Expo link_ |
 
 ## Seeded accounts
