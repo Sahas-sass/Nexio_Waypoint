@@ -16,7 +16,7 @@ See [`docs/architecture.md`](docs/architecture.md), [`docs/data-model.md`](docs/
 | | |
 |---|---|
 | Web portals | https://nexio-waypoint.vercel.app/login |
-| Driver app | _TBD – web build URL or Expo link_ |
+| Driver app (phone-sized web) | https://nexio-waypoint-driver.vercel.app |
 
 ## Seeded accounts
 
