@@ -7,15 +7,18 @@ const API_PORT = 5000;
  * Resolves the api-backend base URL (also used for the Socket.io connection).
  *
  * 1. EXPO_PUBLIC_API_URL from .env, if set.
- * 2. Otherwise, in development, the IP of the machine running Expo (taken from
- *    the Metro host), so a physical phone on the same Wi-Fi reaches the backend.
- * 3. Otherwise localhost.
+ * 2. Web: localhost only during development; a production web build without
+ *    EXPO_PUBLIC_API_URL has no telemetry socket (positions still reach the
+ *    database through the driver_update_location RPC).
+ * 3. Native: the IP of the machine running Expo (taken from the Metro host),
+ *    so a physical phone on the same Wi-Fi reaches the backend.
+ * 4. Otherwise localhost.
  */
-function resolveApiUrl(): string {
+function resolveApiUrl(): string | null {
   const fromEnv = process.env.EXPO_PUBLIC_API_URL;
   if (fromEnv) return fromEnv.replace(/\/+$/, '');
 
-  if (Platform.OS === 'web') return `http://127.0.0.1:${API_PORT}`;
+  if (Platform.OS === 'web') return __DEV__ ? `http://127.0.0.1:${API_PORT}` : null;
 
   // hostUri looks like "192.168.8.158:8081" when served by the dev server
   const host = Constants.expoConfig?.hostUri?.split(':')[0];
