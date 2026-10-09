@@ -22,7 +22,9 @@ files_to_pack = [
     (os.path.join(BASE_DIR, "models", "task2a_total.joblib"), "models/task2a_total.joblib"),
     (os.path.join(BASE_DIR, "models", "task2a_chilled.joblib"), "models/task2a_chilled.joblib"),
 
-    # Documentation
+    # Documentation & Reports (Both PDF and Markdown)
+    (os.path.join(BASE_DIR, "docs", "Nexio_Datathon_Comprehensive_Report.pdf"), "docs/Nexio_Datathon_Comprehensive_Report.pdf"),
+    (os.path.join(BASE_DIR, "docs", "Prioritization_Policy.pdf"), "docs/Prioritization_Policy.pdf"),
     (os.path.join(BASE_DIR, "docs", "Prioritization_Policy.md"), "docs/Prioritization_Policy.md"),
     (os.path.join(BASE_DIR, "docs", "Data_Preprocessing.md"), "docs/Data_Preprocessing.md"),
     (os.path.join(BASE_DIR, "docs", "Architecture_Diagrams.md"), "docs/Architecture_Diagrams.md"),
