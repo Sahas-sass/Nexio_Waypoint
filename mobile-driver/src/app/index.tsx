@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
@@ -16,6 +16,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { StatusDot, WText } from '@/components/waypoint/ui';
+import { useAuthStore } from '@/features/auth/store/authStore';
 import { W } from '@/utils/theme';
 
 const SPLASH_DURATION = 2600;
@@ -24,13 +25,21 @@ export default function SplashRoute() {
   const insets = useSafeAreaInsets();
   const progress = useSharedValue(0);
   const pulse = useSharedValue(0);
+  const authStatus = useAuthStore((s) => s.status);
+  const [introDone, setIntroDone] = useState(false);
 
   useEffect(() => {
     progress.value = withDelay(150, withTiming(1, { duration: 2350, easing: Easing.bezier(0.25, 0.1, 0.25, 1) }));
     pulse.value = withRepeat(withTiming(1, { duration: 1000 }), -1, true);
-    const timer = setTimeout(() => router.replace('/login'), SPLASH_DURATION);
+    const timer = setTimeout(() => setIntroDone(true), SPLASH_DURATION);
     return () => clearTimeout(timer);
   }, [progress, pulse]);
+
+  // Leave the splash once the intro played and the stored session was checked.
+  useEffect(() => {
+    if (!introDone || authStatus === 'loading') return;
+    router.replace(authStatus === 'signedIn' ? '/route' : '/login');
+  }, [introDone, authStatus]);
 
   const loaderStyle = useAnimatedStyle(() => ({ width: `${progress.value * 100}%` }));
   const glowStyle = useAnimatedStyle(() => ({
@@ -41,7 +50,7 @@ export default function SplashRoute() {
   return (
     <Pressable
       style={styles.screen}
-      onPress={() => router.replace('/login')}
+      onPress={() => setIntroDone(true)}
       accessibilityRole="button"
       accessibilityLabel="Continue to Waypoint Delivery">
       <LinearGradient

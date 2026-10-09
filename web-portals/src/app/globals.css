@@ -1,3 +1,4 @@
+@import url("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css");
 @import "tailwindcss";
 
 @theme {
@@ -18,7 +19,6 @@
 }
 
 /* Leaflet map styles and overrides */
-@import "leaflet/dist/leaflet.css";
 
 .leaflet-div-icon {
   background: transparent !important;

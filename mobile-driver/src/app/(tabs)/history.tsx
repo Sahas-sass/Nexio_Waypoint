@@ -1,150 +1,48 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
-import { getFormattedHeaderDate, Screen } from '@/components/waypoint/chrome';
+import { Screen } from '@/components/waypoint/chrome';
 import { Icon } from '@/components/waypoint/icon';
 import { Card, Label, TitleRow } from '@/components/waypoint/ui';
-import { db, type StopRecord } from '@/database/schema';
-import { Colors, font, Radius, Shadow, W } from '@/utils/theme';
+import {
+  buildHistory,
+  filterHistory,
+  itemsLabel,
+  summarizeHistory,
+  type HistoryFilter,
+  type HistoryItem,
+} from '@/features/history/utils/deliveryHistory';
+import { useSyncStore } from '@/features/sync/store/syncStore';
+import { TripStateView } from '@/features/trip/components/TripStateView';
+import { useTrip } from '@/features/trip/hooks/useTrip';
+import { reloadTrip } from '@/features/trip/services/tripController';
+import { formatDateParts, formatKg, formatTimestamp, padStop, parseDateOnly } from '@/utils/formatters';
+import { Colors, font, Shadow, W } from '@/utils/theme';
 
-const FILTERS = ['All', 'Completed', 'Exceptions'] as const;
-type FilterType = (typeof FILTERS)[number];
-
-interface DeliveryHistoryItem {
-  id: string;
-  stop: string;
-  store: string;
-  city: string;
-  time: string;
-  items: string;
-  type: 'Chilled' | 'Ambient';
-  status: 'Complete' | 'Shortfall';
-  isDb?: boolean;
-}
-
-const STATIC_DELIVERIES: DeliveryHistoryItem[] = [
-  {
-    id: 'hist-2',
-    stop: 'Stop 02',
-    store: 'Fresh Store #22',
-    city: 'Nugegoda',
-    time: '8:24 AM',
-    items: '28/28 items',
-    type: 'Chilled',
-    status: 'Complete',
-  },
-  {
-    id: 'hist-1',
-    stop: 'Stop 01',
-    store: 'Fresh Store #18',
-    city: 'Colombo 07',
-    time: '7:10 AM',
-    items: '16/16 items',
-    type: 'Chilled',
-    status: 'Complete',
-  },
-  {
-    id: 'hist-6',
-    stop: 'Stop 06',
-    store: 'Urban Market #05',
-    city: 'Rajagiriya',
-    time: 'Yesterday · 1:42 PM',
-    items: '21/22 items',
-    type: 'Ambient',
-    status: 'Shortfall',
-  },
-  {
-    id: 'hist-5',
-    stop: 'Stop 05',
-    store: 'Daily Market #14',
-    city: 'Battaramulla',
-    time: 'Yesterday · 12:18 PM',
-    items: '34/34 items',
-    type: 'Ambient',
-    status: 'Complete',
-  },
-];
+const FILTERS: HistoryFilter[] = ['All', 'Completed', 'Exceptions'];
 
 export default function HistoryScreen() {
-  const [filter, setFilter] = useState<FilterType>('All');
-  const [dbCompletedStops, setDbCompletedStops] = useState<StopRecord[]>([]);
+  const [filter, setFilter] = useState<HistoryFilter>('All');
   const [refreshing, setRefreshing] = useState(false);
+  const { status, error, trip, stops, downloadedAt } = useTrip();
+  const outbox = useSyncStore((s) => s.outbox);
+  const pendingCount = useSyncStore((s) => s.pendingCount);
+  const lastSyncedAt = useSyncStore((s) => s.lastSyncedAt);
 
-  // Load completed stops from SQLite
-  const loadCompletedStops = useCallback(() => {
-    try {
-      const rows = db.getAllSync<StopRecord>(
-        "SELECT * FROM stops WHERE status = 'COMPLETED' ORDER BY stop_number ASC;"
-      );
-      setDbCompletedStops(rows ?? []);
-    } catch (err) {
-      console.warn('[HistoryScreen] Failed to read completed stops:', err);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadCompletedStops();
-  }, [loadCompletedStops]);
-
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      loadCompletedStops();
+      await reloadTrip();
     } finally {
       setRefreshing(false);
     }
-  }, [loadCompletedStops]);
+  }, []);
 
-  // Merge SQLite completed stops with history
-  const allDeliveries = useMemo<DeliveryHistoryItem[]>(() => {
-    // If SQLite has completed stops, integrate them dynamically
-    const dbItems: DeliveryHistoryItem[] = dbCompletedStops.map((s) => ({
-      id: `db-${s.id}`,
-      stop: `Stop ${String(s.stop_number).padStart(2, '0')}`,
-      store: s.store_name,
-      city: s.address,
-      time: s.stop_number === 1 ? '7:10 AM' : '8:24 AM',
-      items: `${s.items_count}/${s.items_count} items`,
-      type: s.is_chilled === 1 ? 'Chilled' : 'Ambient',
-      status: 'Complete',
-      isDb: true,
-    }));
-
-    // Avoid duplicate stops if DB already has Stop 01 or Stop 02
-    const filteredStatic = STATIC_DELIVERIES.filter(
-      (sd) => !dbItems.some((di) => di.store.toLowerCase() === sd.store.toLowerCase())
-    );
-
-    return [...dbItems, ...filteredStatic];
-  }, [dbCompletedStops]);
-
-  // Apply segmented tab filter
-  const filteredDeliveries = useMemo(() => {
-    if (filter === 'Completed') {
-      return allDeliveries.filter((d) => d.status === 'Complete');
-    }
-    if (filter === 'Exceptions') {
-      return allDeliveries.filter((d) => d.status === 'Shortfall');
-    }
-    return allDeliveries;
-  }, [allDeliveries, filter]);
-
-  const todayDeliveries = useMemo(
-    () => filteredDeliveries.filter((d) => !d.time.startsWith('Yesterday')),
-    [filteredDeliveries]
-  );
-
-  const yesterdayDeliveries = useMemo(
-    () => filteredDeliveries.filter((d) => d.time.startsWith('Yesterday')),
-    [filteredDeliveries]
-  );
+  const history = useMemo(() => buildHistory(stops, outbox), [stops, outbox]);
+  const visible = useMemo(() => filterHistory(history, filter), [history, filter]);
+  const summary = useMemo(() => summarizeHistory(history), [history]);
+  const tripDate = formatDateParts(parseDateOnly(trip?.tripDate) ?? new Date()).fullDate;
+  const lastSynced = formatTimestamp(lastSyncedAt ?? downloadedAt);
 
   return (
     <Screen
@@ -156,207 +54,178 @@ export default function HistoryScreen() {
           colors={[Colors.primaryYellow]}
         />
       }>
-      {/* 1. Top Header */}
       <TitleRow
         eyebrow="DELIVERY RECORDS"
         title="History"
-        subtitle="Your recent completed stops"
+        subtitle={trip ? `Closed stops on ${trip.tripNumber}` : 'Your closed stops'}
         aside={
           <View style={styles.shiftCounterPill}>
-            <Text style={styles.shiftCounterNumber}>12</Text>
-            <Text style={styles.shiftCounterLabel}>THIS WEEK</Text>
+            <Text style={styles.shiftCounterNumber}>{summary.closed}</Text>
+            <Text style={styles.shiftCounterLabel}>CLOSED</Text>
           </View>
         }
       />
 
-      {/* 2. Performance KPI Cards (3-column layout) */}
-      <View style={styles.kpiContainer}>
-        {/* Card 1: Completed Stops */}
-        <Card style={styles.kpiCard}>
-          <Label size={8} spacing={0.07}>
-            COMPLETED
-          </Label>
-          <Text style={styles.kpiValue}>11</Text>
-          <View style={styles.kpiSubRow}>
-            <Text style={styles.kpiSubText}>92% success</Text>
-          </View>
-        </Card>
+      {!trip ? (
+        <TripStateView
+          kind={status === 'error' ? 'error' : status === 'ready' ? 'empty' : 'loading'}
+          message={status === 'error' ? error : undefined}
+          onRetry={handleRefresh}
+        />
+      ) : (
+        <>
+          <View style={styles.kpiContainer}>
+            <Card style={styles.kpiCard}>
+              <Label size={8} spacing={0.07}>
+                COMPLETED
+              </Label>
+              <Text style={styles.kpiValue}>{summary.completed}</Text>
+              <View style={styles.kpiSubRow}>
+                <Text style={styles.kpiSubText}>{summary.successPercent}% success</Text>
+              </View>
+            </Card>
 
-        {/* Card 2: Cargo Delivered */}
-        <Card style={styles.kpiCard}>
-          <Label size={8} spacing={0.07}>
-            CARGO DELIVERED
-          </Label>
-          <Text style={styles.kpiValue}>286</Text>
-          <View style={styles.kpiSubRow}>
-            <Text style={styles.kpiSubText}>2,840 kg total</Text>
-          </View>
-        </Card>
+            <Card style={styles.kpiCard}>
+              <Label size={8} spacing={0.07}>
+                CARGO DELIVERED
+              </Label>
+              <Text style={styles.kpiValue}>{summary.itemsDelivered}</Text>
+              <View style={styles.kpiSubRow}>
+                <Text style={styles.kpiSubText}>{formatKg(summary.weightKg)} total</Text>
+              </View>
+            </Card>
 
-        {/* Card 3: Punctuality / On-Time Rate */}
-        <Card style={styles.kpiCard}>
-          <Label size={8} spacing={0.07}>
-            ON-TIME RATE
-          </Label>
-          <Text style={styles.kpiValue}>96%</Text>
-          <View style={styles.kpiSubRow}>
-            <Icon name="check" size={10} color={W.greenDark} />
-            <Text style={[styles.kpiSubText, { color: W.greenDark }]}>
-              +3% this week
-            </Text>
-          </View>
-        </Card>
-      </View>
-
-      {/* 3. Filter Tabs (Segmented Pill Filter) */}
-      <View style={styles.filterBar}>
-        {FILTERS.map((tab) => {
-          const active = tab === filter;
-          return (
-            <Pressable
-              key={tab}
-              onPress={() => setFilter(tab)}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: active }}
-              style={[
-                styles.filterPill,
-                active && styles.filterPillActive,
-              ]}>
-              <Text
-                style={[
-                  styles.filterPillText,
-                  active && styles.filterPillTextActive,
-                ]}>
-                {tab}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      {/* 4. Grouped Delivery Activity */}
-      {/* Section: Today */}
-      {todayDeliveries.length > 0 && (
-        <View style={styles.dateSection}>
-          <View style={styles.dateHeaderRow}>
-            <Text style={styles.dateSectionTitle}>Today</Text>
-            <Text style={styles.dateSectionMeta}>{getFormattedHeaderDate()}</Text>
+            <Card style={styles.kpiCard}>
+              <Label size={8} spacing={0.07}>
+                EXCEPTIONS
+              </Label>
+              <Text style={styles.kpiValue}>{summary.exceptions}</Text>
+              <View style={styles.kpiSubRow}>
+                <Text style={styles.kpiSubText}>shortfall / failed</Text>
+              </View>
+            </Card>
           </View>
 
-          <View style={styles.activityList}>
-            {todayDeliveries.map((item) => (
-              <DeliveryCard key={item.id} item={item} />
-            ))}
+          <View style={styles.filterBar}>
+            {FILTERS.map((tab) => {
+              const active = tab === filter;
+              return (
+                <Pressable
+                  key={tab}
+                  onPress={() => setFilter(tab)}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: active }}
+                  style={[styles.filterPill, active && styles.filterPillActive]}>
+                  <Text style={[styles.filterPillText, active && styles.filterPillTextActive]}>{tab}</Text>
+                </Pressable>
+              );
+            })}
           </View>
-        </View>
+
+          <View style={styles.dateSection}>
+            <View style={styles.dateHeaderRow}>
+              <Text style={styles.dateSectionTitle}>{trip.tripNumber}</Text>
+              <Text style={styles.dateSectionMeta}>{tripDate}</Text>
+            </View>
+
+            {visible.length === 0 ? (
+              <TripStateView
+                kind="empty"
+                title={history.length === 0 ? 'No deliveries closed yet' : 'Nothing matches this filter'}
+                message={history.length === 0 ? 'Completed stops will appear here after proof of delivery.' : null}
+              />
+            ) : (
+              <View style={styles.activityList}>
+                {visible.map((item) => (
+                  <DeliveryCard key={item.id} item={item} />
+                ))}
+              </View>
+            )}
+          </View>
+        </>
       )}
 
-      {/* Section: Yesterday */}
-      {yesterdayDeliveries.length > 0 && (
-        <View style={styles.dateSection}>
-          <View style={styles.dateHeaderRow}>
-            <Text style={styles.dateSectionTitle}>Yesterday</Text>
-            <Text style={styles.dateSectionMeta}>Sunday, 13 October</Text>
-          </View>
-
-          <View style={styles.activityList}>
-            {yesterdayDeliveries.map((item) => (
-              <DeliveryCard key={item.id} item={item} />
-            ))}
-          </View>
-        </View>
-      )}
-
-      {/* 5. Bottom Sync Status Footer */}
       <View style={styles.syncFooter}>
         <View style={styles.syncIconCircle}>
-          <Icon name="cloud" size={17} color={W.greenDark} />
+          <Icon name="cloud" size={17} color={pendingCount > 0 ? '#B45309' : W.greenDark} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.syncFooterTitle}>All records synchronized</Text>
-          <Text style={styles.syncFooterSubtitle}>
-            Last synced today at 8:25 AM
+          <Text style={styles.syncFooterTitle}>
+            {pendingCount > 0
+              ? `${pendingCount} record${pendingCount === 1 ? '' : 's'} waiting to sync`
+              : 'All records synchronized'}
           </Text>
+          {lastSynced ? <Text style={styles.syncFooterSubtitle}>Last synced at {lastSynced}</Text> : null}
         </View>
       </View>
     </Screen>
   );
 }
 
-function DeliveryCard({ item }: { item: DeliveryHistoryItem }) {
-  const isShortfall = item.status === 'Shortfall';
+function DeliveryCard({ item }: { item: HistoryItem }) {
+  const isException = item.status !== 'Complete';
+  const chilled = item.temp === 'chilled';
+  const time = formatTimestamp(item.completedAt);
 
   return (
     <Card style={styles.deliveryCard}>
-      {/* Status Icon */}
-      <View
-        style={[
-          styles.statusIconBox,
-          isShortfall && styles.statusIconBoxException,
-        ]}>
+      <View style={[styles.statusIconBox, isException && styles.statusIconBoxException]}>
         <Icon
-          name={isShortfall ? 'alert' : 'check'}
+          name={item.status === 'Failed' ? 'x' : isException ? 'alert' : 'check'}
           size={18}
-          color={isShortfall ? '#B45309' : W.greenDark}
+          color={isException ? '#B45309' : W.greenDark}
         />
       </View>
 
-      {/* Delivery Info */}
       <View style={{ flex: 1, minWidth: 0 }}>
         <View style={styles.cardTopRow}>
           <View style={styles.stopTag}>
-            <Text style={styles.stopTagText}>{item.stop.toUpperCase()}</Text>
+            <Text style={styles.stopTagText}>STOP {padStop(item.sequence)}</Text>
           </View>
-          <Text style={styles.deliveryTimeText}>{item.time}</Text>
+          {time ? <Text style={styles.deliveryTimeText}>{time}</Text> : null}
         </View>
 
         <Text style={styles.storeNameText} numberOfLines={1}>
-          {item.store}
+          {item.storeName}
         </Text>
 
-        <View style={styles.cityRow}>
-          <Icon name="pin" size={12} color={Colors.textSecondary} />
-          <Text style={styles.cityText} numberOfLines={1}>
-            {item.city}
-          </Text>
-        </View>
+        {item.address ? (
+          <View style={styles.cityRow}>
+            <Icon name="pin" size={12} color={Colors.textSecondary} />
+            <Text style={styles.cityText} numberOfLines={1}>
+              {item.address}
+            </Text>
+          </View>
+        ) : null}
 
-        {/* Badges Row */}
         <View style={styles.chipsRow}>
-          {/* Items count */}
           <View style={styles.itemBadge}>
-            <Text style={styles.itemBadgeText}>{item.items}</Text>
+            <Text style={styles.itemBadgeText}>{itemsLabel(item)}</Text>
           </View>
 
-          {/* Temperature Badge */}
-          <View
-            style={[
-              styles.tempBadge,
-              item.type === 'Chilled' ? styles.tempBadgeChilled : styles.tempBadgeAmbient,
-            ]}>
-            {item.type === 'Chilled' && (
-              <Icon name="snow" size={12} color="#08759E" />
-            )}
-            <Text
-              style={[
-                styles.tempBadgeText,
-                item.type === 'Chilled' ? { color: '#08759E' } : { color: Colors.textSecondary },
-              ]}>
-              {item.type}
+          <View style={[styles.tempBadge, chilled ? styles.tempBadgeChilled : styles.tempBadgeAmbient]}>
+            {chilled && <Icon name="snow" size={12} color="#08759E" />}
+            <Text style={[styles.tempBadgeText, { color: chilled ? '#08759E' : Colors.textSecondary }]}>
+              {chilled ? 'Chilled' : 'Ambient'}
             </Text>
           </View>
 
-          {/* Exception Warning if Shortfall */}
-          {isShortfall && (
+          {isException && (
             <View style={styles.shortfallBadge}>
               <Icon name="alert" size={11} color="#B45309" />
-              <Text style={styles.shortfallBadgeText}>Shortfall Reported</Text>
+              <Text style={styles.shortfallBadgeText}>
+                {item.status === 'Failed' ? 'Delivery Failed' : 'Shortfall Reported'}
+              </Text>
+            </View>
+          )}
+
+          {item.synced === false && (
+            <View style={styles.itemBadge}>
+              <Text style={styles.itemBadgeText}>Waiting to sync</Text>
             </View>
           )}
         </View>
       </View>
-
-      <Icon name="chevron" size={16} color="#CBD5E1" />
     </Card>
   );
 }

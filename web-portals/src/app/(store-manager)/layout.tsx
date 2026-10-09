@@ -1,75 +1,68 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutGrid, ShoppingBag, Truck, Bell } from "lucide-react";
-import UserProfileDropdown from "@/app/profile/UserProfileDropdown";
+import { LayoutGrid, ShoppingBag, Truck, Bell, History } from "lucide-react";
+import { StoreProvider } from "./components/StoreProvider";
+import { TopBar } from "./components/TopBar";
+import { SidebarStoreCard } from "./components/SidebarStoreCard";
+
+const NAV_ITEMS = [
+  { name: "Store Overview", icon: LayoutGrid, path: "/overview" },
+  { name: "Orders", icon: ShoppingBag, path: "/orders" },
+  { name: "Receiving", icon: Truck, path: "/receiving" },
+  { name: "Alerts", icon: Bell, path: "/alerts" },
+  { name: "History", icon: History, path: "/history" },
+];
 
 export default function StoreManagerLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
-  const navItems = [
-    { name: "Overview", href: "/overview", icon: LayoutGrid },
-    { name: "Orders", href: "/orders", icon: ShoppingBag },
-    { name: "Receiving", href: "/receiving", icon: Truck },
-  ];
-
   return (
-    <div className="min-h-screen bg-waypoint-bg flex flex-col font-sans">
-      {/* Top Header */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-[#E8E8E3] px-6 sm:px-8 py-3 flex items-center justify-between shadow-xs">
-        {/* Left: Brand + Store Manager Tag */}
-        <div className="flex items-center gap-6">
-          <Link href="/overview" className="flex items-center gap-2.5 group">
-            <img src="/logo.png" alt="Waypoint" className="w-8 h-8 object-contain group-hover:scale-105 transition-transform" />
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-bold text-base text-waypoint-text tracking-tight">Waypoint</span>
-                <span className="bg-emerald-50 text-emerald-800 text-[10px] font-extrabold px-1.5 py-0.5 rounded-md uppercase tracking-wider border border-emerald-200">
-                  Store
-                </span>
+    <StoreProvider>
+      <div className="min-h-screen bg-[#F7F6F2] text-[#1C1C1C] flex font-sans antialiased selection:bg-[#F5C242]/30">
+        {/* LEFT SIDEBAR */}
+        <aside className="w-60 bg-white border-r border-[#ECEAE4] flex flex-col justify-between p-5 shrink-0 select-none fixed h-full z-40">
+          <div>
+            <Link href="/overview" className="flex items-center gap-3 px-1.5 py-1 group outline-none">
+              <div className="bg-[#1C1C1C] w-9 h-9 rounded-xl flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform">
+                <div className="w-3.5 h-3.5 rounded-full bg-[#F5C242]" />
               </div>
-            </div>
-          </Link>
+              <span className="text-xl font-bold tracking-tight text-neutral-900">Waypoint</span>
+            </Link>
 
-          {/* Navigation Links */}
-          <nav className="hidden md:flex items-center gap-1">
-            {navItems.map((item) => {
-              const isActive = pathname === item.href;
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                    isActive
-                      ? "bg-waypoint-yellow text-waypoint-text shadow-xs"
-                      : "text-waypoint-secondary hover:bg-gray-100 hover:text-waypoint-text"
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span>{item.name}</span>
-                </Link>
-              );
-            })}
-          </nav>
+            <nav className="mt-8 space-y-1.5">
+              {NAV_ITEMS.map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname === item.path || pathname.startsWith(`${item.path}/`);
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.path}
+                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-all outline-none ${
+                      isActive
+                        ? "bg-[#FDF6E2] text-neutral-900 font-semibold shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
+                        : "text-neutral-600 font-medium hover:bg-[#F7F6F2] hover:text-neutral-900"
+                    }`}
+                  >
+                    <Icon className={`w-4 h-4 ${isActive ? "text-neutral-900 stroke-[2.2]" : "text-neutral-500"}`} />
+                    <span>{item.name}</span>
+                  </Link>
+                );
+              })}
+            </nav>
+          </div>
+
+          <SidebarStoreCard />
+        </aside>
+
+        {/* MAIN VIEWPORT COLUMN */}
+        <div className="flex-1 flex flex-col min-w-0 ml-60">
+          <TopBar />
+          {children}
         </div>
-
-        {/* Right: Actions & User Profile */}
-        <div className="flex items-center gap-3">
-          <button className="relative p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-xl transition-colors">
-            <Bell className="w-4.5 h-4.5" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-waypoint-orange rounded-full border border-white" />
-          </button>
-
-          <UserProfileDropdown layoutVariant="header" />
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="flex-1 p-6 sm:p-8">
-        {children}
-      </main>
-    </div>
+      </div>
+    </StoreProvider>
   );
 }

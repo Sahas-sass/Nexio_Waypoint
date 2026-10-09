@@ -1,0 +1,23 @@
+# Render Blueprint: api-backend (Socket.io telemetry relay)
+# Dashboard → New → Blueprint → select this repo. You will be asked for the
+# two secret values (sync: false); they are never stored in the repository.
+services:
+  - type: web
+    name: waypoint-api
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: api-backend
+    buildCommand: npm ci --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        value: https://nexio-waypoint.vercel.app,https://nexio-waypoint-driver.vercel.app

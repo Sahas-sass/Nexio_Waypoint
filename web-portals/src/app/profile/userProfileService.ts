@@ -58,7 +58,7 @@ export async function fetchRecentUserActivities(
       if (!error && logs && logs.length > 0) {
         return logs.map((log) => ({
           title: `Dispatched ${log.trip_number} (${log.plate_number})`,
-          meta: `${log.total_pallets} pallets • Seal ${log.seal_number || "Verified"}`,
+          meta: `${log.total_pallets} pallets • ${log.seal_number ? `Seal ${log.seal_number}` : "No seal recorded"}`,
           time: formatRelativeTime(log.dispatched_at || log.created_at),
           type: log.has_discrepancy ? "check" : "truck",
         }));
@@ -116,31 +116,7 @@ export async function fetchCurrentUserProfile(): Promise<UserProfile> {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    const roleConfig = getRoleConfig("loader");
-    return {
-      id: "",
-      email: "staff@waypoint.com",
-      fullName: "Waypoint Staff",
-      role: "loader",
-      roleTitle: roleConfig.title,
-      avatarUrl: null,
-      assignedBay: "Bay 04",
-      station: "Central Fulfillment Hub",
-      shift: "Morning Shift (06:00 - 14:00)",
-      initials: "WP",
-      activities: [
-        {
-          title: "Account active",
-          meta: "Session authenticated",
-          time: "Just now",
-          type: "check",
-        },
-      ],
-      isVerified: true,
-      status: "active",
-      createdAt: new Date().toISOString(),
-      lastSignInAt: null,
-    };
+    throw new Error("Not signed in");
   }
 
   // Fetch row from profiles table
@@ -151,7 +127,7 @@ export async function fetchCurrentUserProfile(): Promise<UserProfile> {
     .maybeSingle();
 
   const metadata = user.user_metadata || {};
-  const fullName = profile?.full_name || metadata.full_name || "Waypoint Staff";
+  const fullName = profile?.full_name || metadata.full_name || user.email || "";
   const role: UserRole = profile?.role || metadata.role || "loader";
   const roleConfig = getRoleConfig(role);
   const avatarUrl = profile?.avatar_url || metadata.avatar_url || null;
@@ -161,7 +137,7 @@ export async function fetchCurrentUserProfile(): Promise<UserProfile> {
   const storeId = profile?.store_id || metadata.store_id || null;
   const phone = profile?.phone || metadata.phone || null;
   const department = profile?.department || roleConfig.defaultDepartment;
-  const employeeId = profile?.employee_id || `${roleConfig.defaultEmployeeIdPrefix}-001`;
+  const employeeId = profile?.employee_id || null;
   const outlet = profile?.outlet || null;
   const isVerified: boolean = profile?.is_verified ?? true;
   const status: string = profile?.status || "active";
@@ -211,76 +187,29 @@ export async function fetchCurrentUserProfile(): Promise<UserProfile> {
   };
 }
 
-export async function updateUserProfile(updates: {
+/** Fields a user may edit on their own profile (validated again by /profile/update). */
+export interface ProfileUpdates {
   fullName?: string;
   phone?: string;
   department?: string;
   outlet?: string;
   shift?: string;
-  employeeId?: string;
   assignedBay?: string;
   station?: string;
   activities?: UserActivity[];
-  status?: string;
-  isVerified?: boolean;
   assignedMeta?: string;
-}): Promise<void> {
-  const supabase = getSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+}
 
-  if (!user) throw new Error("User is not authenticated");
-
-  try {
-    const res = await fetch("/profile/update", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId: user.id,
-        fullName: updates.fullName,
-        phone: updates.phone,
-        department: updates.department,
-        outlet: updates.outlet,
-        shift: updates.shift,
-        employeeId: updates.employeeId,
-        assignedBay: updates.assignedBay,
-        station: updates.station,
-        activities: updates.activities,
-        status: updates.status,
-        isVerified: updates.isVerified,
-        assignedMeta: updates.assignedMeta,
-      }),
-    });
-
-    const json = await res.json();
-    if (!res.ok || !json.success) {
-      throw new Error(json.error || "API update failed");
-    }
-  } catch (apiErr: any) {
-    console.warn("API route update fallback to client Supabase update:", apiErr?.message);
-    const updateData: Record<string, any> = {};
-    if (updates.fullName !== undefined) updateData.full_name = updates.fullName;
-    if (updates.phone !== undefined) updateData.phone = updates.phone;
-    if (updates.department !== undefined) updateData.department = updates.department;
-    if (updates.outlet !== undefined) updateData.outlet = updates.outlet;
-    if (updates.shift !== undefined) updateData.shift = updates.shift;
-    if (updates.employeeId !== undefined) updateData.employee_id = updates.employeeId;
-    if (updates.assignedBay !== undefined) updateData.assigned_bay = updates.assignedBay;
-    if (updates.station !== undefined) updateData.station = updates.station;
-    if (updates.activities !== undefined) updateData.activities = updates.activities;
-    if (updates.status !== undefined) updateData.status = updates.status;
-    if (updates.isVerified !== undefined) updateData.is_verified = updates.isVerified;
-    if (updates.assignedMeta !== undefined) updateData.assigned_meta = updates.assignedMeta;
-
-    const { error } = await supabase
-      .from("profiles")
-      .update(updateData)
-      .eq("id", user.id);
-
-    if (error) {
-      throw new Error(error.message || "Failed to update profile");
-    }
+/** Saves the signed-in user's own profile through the server route (no client-side fallback). */
+export async function updateUserProfile(updates: ProfileUpdates): Promise<void> {
+  const res = await fetch("/profile/update", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updates),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.success) {
+    throw new Error(json.error || "Failed to update profile");
   }
 }
 

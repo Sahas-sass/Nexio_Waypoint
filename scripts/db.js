@@ -28,8 +28,13 @@ try {
   }
 }
 
-const SUPABASE_URL = process.env.SUPABASE_URL || "https://cqkmmmrrhuwitlvwoebq.supabase.co";
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || "";
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  console.error("SUPABASE_URL and SUPABASE_SERVICE_KEY are required.");
+  process.exit(1);
+}
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false }
@@ -70,7 +75,7 @@ async function listUsers() {
 
 async function updateProfile(identifier, updates) {
   console.log(`\n🔄 Updating profile for "${identifier}"...`);
-  
+
   const { data: usersData } = await supabase.auth.admin.listUsers();
   const user = usersData.users.find(u => u.email === identifier || u.id === identifier);
 
@@ -199,7 +204,7 @@ $$;
 }
 
 // CLI Arg Parsing
-const [,, command, ...args] = process.argv;
+const [, , command, ...args] = process.argv;
 
 async function main() {
   switch (command) {

@@ -13,26 +13,19 @@ import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { OfflineBanner } from '@/components/offline/OfflineBanner';
-import { initDatabase } from '@/database/schema';
-import { useNetworkState } from '@/hooks/useNetworkState';
+import { useAuthBootstrap } from '@/features/auth/hooks/useAuthBootstrap';
+import { useAuthStore } from '@/features/auth/store/authStore';
+import { useNetworkState } from '@/features/sync/hooks/useNetworkState';
+import { useTripLifecycle } from '@/features/trip/hooks/useTripLifecycle';
 import { W } from '@/utils/theme';
-import { locationService } from '@/services/LocationService';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   useNetworkState();
-
-  useEffect(() => {
-    try {
-      initDatabase();
-      // Initialize Socket.io connection and start GPS tracking
-      locationService.initialize();
-      locationService.startTracking('driver_123').catch(console.error);
-    } catch (err) {
-      console.error('Failed to initialize database or location service:', err);
-    }
-  }, []);
+  useAuthBootstrap();
+  useTripLifecycle();
+  const authStatus = useAuthStore((s) => s.status);
 
   const [loaded, error] = useFonts({
     Manrope_400Regular,
@@ -48,17 +41,23 @@ export default function RootLayout() {
 
   if (!loaded && !error) return null;
 
+  const signedIn = authStatus === 'signedIn';
+
   return (
     <SafeAreaProvider style={{ flex: 1 }}>
       <StatusBar style="dark" />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: W.offWhite } }}>
         <Stack.Screen name="index" options={{ animation: 'fade' }} />
-        <Stack.Screen name="(auth)/login" options={{ animation: 'fade' }} />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="offline" />
+        <Stack.Protected guard={!signedIn}>
+          <Stack.Screen name="(auth)/login" options={{ animation: 'fade' }} />
+        </Stack.Protected>
+        <Stack.Protected guard={signedIn}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="offline" />
+        </Stack.Protected>
       </Stack>
       {/* Mounted after Stack so absolute positioning renders on top in the paint hierarchy */}
-      <OfflineBanner />
+      {signedIn && <OfflineBanner />}
     </SafeAreaProvider>
   );
 }

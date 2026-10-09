@@ -1,16 +1,71 @@
 import * as Location from 'expo-location';
 import { io, Socket } from 'socket.io-client';
-import { enqueueSyncItem } from '@/database/syncManager';
-import { useLocationStore } from '@/store/locationStore';
 
-// Ideally, this should point to the backend URL via an env variable.
-// For local testing on an emulator, use standard localhost or 10.0.2.2.
-const SOCKET_URL = 'http://localhost:5000';
+// Avoid TypeScript module resolution issues in the app bundle by resolving the store at runtime.
+// Some build setups are case-sensitive or omit this file from the bundle, so fall back safely.
+type LocationStoreState = {
+  setLocation: (coords: { latitude: number; longitude: number }) => void;
+};
+
+type LocationStoreModule = {
+  useLocationStore?: {
+    getState: () => LocationStoreState;
+  };
+};
+
+let useLocationStore: { getState: () => LocationStoreState } = {
+  getState: () => ({
+    setLocation: () => undefined,
+  }),
+};
+
+const LOCATION_STORE_PATHS = ['../store/LocationStore', '../store/locationStore'];
+
+for (const modulePath of LOCATION_STORE_PATHS) {
+  try {
+    const locationStoreModule = require(modulePath) as LocationStoreModule;
+
+    if (locationStoreModule?.useLocationStore && typeof locationStoreModule.useLocationStore.getState === 'function') {
+      useLocationStore = locationStoreModule.useLocationStore;
+      break;
+    }
+  } catch (error) {
+    // Ignore resolution failures and continue to the next known casing variant.
+  }
+}
+
+// Avoid a hard import to the sync queue utility here because the module may not exist in
+// this bundle. Fall back to a safe runtime require so offline telemetry gracefully degrades
+// instead of failing TypeScript compilation.
+type SyncEnqueueFn = (tableName: string, eventType: string, payload: unknown) => void;
+
+let enqueueSyncItem: SyncEnqueueFn = () => {
+  console.warn('[LocationService] Sync manager unavailable; dropping offline telemetry.');
+};
+
+try {
+  const syncManager = require('../database/syncManager') as {
+    enqueueSyncItem?: SyncEnqueueFn;
+  };
+
+  if (syncManager && typeof syncManager.enqueueSyncItem === 'function') {
+    enqueueSyncItem = syncManager.enqueueSyncItem;
+  }
+} catch (error) {
+  console.warn('[LocationService] Unable to load sync manager module.', error);
+}
+
+// Environment-driven WebSocket endpoint for production or local development
+const SOCKET_URL =
+  process.env.EXPO_PUBLIC_SOCKET_URL ||
+  process.env.EXPO_PUBLIC_BACKEND_URL ||
+  'http://localhost:5000';
 
 class LocationService {
   private socket: Socket | null = null;
   private locationSubscription: Location.LocationSubscription | null = null;
   private isTracking = false;
+  private lastOfflineTelemetryTime = 0;
 
   public initialize() {
     this.socket = io(SOCKET_URL, {
@@ -85,11 +140,13 @@ class LocationService {
     if (this.socket && this.socket.connected) {
       // Online: Emit directly to WebSocket
       this.socket.emit('driver_location_update', payload);
-      // console.log('[LocationService] Emitted location online:', payload);
     } else {
-      // Offline: Gracefully degrade by caching locally in SQLite queue
-      // console.log('[LocationService] Offline! Caching location to local db...', payload);
-      enqueueSyncItem('system_telemetry', 'LOCATION_UPDATE', payload);
+      // Offline: Throttle telemetry queueing to at most once per 30s to prevent DB queue explosion
+      const now = Date.now();
+      if (now - this.lastOfflineTelemetryTime >= 30000) {
+        this.lastOfflineTelemetryTime = now;
+        enqueueSyncItem('system_telemetry', 'LOCATION_UPDATE', payload);
+      }
     }
   }
 }

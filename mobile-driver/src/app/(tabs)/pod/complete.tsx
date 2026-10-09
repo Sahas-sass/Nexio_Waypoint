@@ -1,6 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo } from 'react';
 import {
     Pressable,
     StyleSheet,
@@ -10,222 +9,137 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Screen } from '@/components/waypoint/chrome';
-import { Icon } from '@/components/waypoint/icon';
+import { Icon, type IconName } from '@/components/waypoint/icon';
 import { Card, Label, Pill } from '@/components/waypoint/ui';
-import { stopDetails } from '@/data/mock';
-import { db, initDatabase, type StopRecord } from '@/database/schema';
-import { useQueueStore } from '@/store/queueStore';
+import { useLocationStore } from '@/features/location/locationStore';
+import { StopEmptyState } from '@/features/pod/components/StopEmptyState';
+import { findStop, nextOpenStop } from '@/features/pod/utils/findStop';
+import { latestPodRow, podPayload, podSyncState } from '@/features/pod/utils/podResult';
+import { useSyncStore } from '@/features/sync/store/syncStore';
+import { useTrip } from '@/features/trip/hooks/useTrip';
+import { distanceLabel } from '@/utils/haversine';
+import { formatTimestamp, padStop } from '@/utils/formatters';
 import { Colors, font, Radius, Shadow, W } from '@/utils/theme';
+
+const SYNC_TEXT = {
+    synced: 'Synced',
+    queued: 'Waiting to sync',
+    retrying: 'Retrying sync',
+    none: 'Synced',
+} as const;
 
 export default function DeliveryCompleteScreen() {
     const insets = useSafeAreaInsets();
-    const { completedStopId, nextStopId, stopId } = useLocalSearchParams<{
-        completedStopId?: string;
-        nextStopId?: string;
-        stopId?: string;
-    }>();
+    const { stopId } = useLocalSearchParams<{ stopId?: string }>();
+    const { stops } = useTrip();
+    const outbox = useSyncStore((s) => s.outbox);
+    const pendingCount = useSyncStore((s) => s.pendingCount);
+    const liveCoords = useLocationStore((s) => s.coords);
 
-    const isOnline = useQueueStore((state) => state.isOnline);
-    const pendingCount = useQueueStore((state) => state.pendingCount);
+    const stop = findStop(stops, stopId, null);
+    if (!stop) {
+        return (
+            <Screen>
+                <StopEmptyState icon="alert" title="Delivery not found" message="This stop is no longer on your current trip." />
+            </Screen>
+        );
+    }
 
-    const activeCompletedId = completedStopId ?? stopId;
-
-    // Query completed stop from SQLite
-    const completedStop = useMemo<StopRecord | null>(() => {
-        try {
-            if (activeCompletedId) {
-                const found = db.getFirstSync<StopRecord>(
-                    'SELECT * FROM stops WHERE id = ? OR stop_number = ? LIMIT 1;',
-                    [activeCompletedId, Number(activeCompletedId) || 0]
-                );
-                if (found) return found;
-            }
-            // Fallback: latest completed stop
-            return (
-                db.getFirstSync<StopRecord>(
-                    "SELECT * FROM stops WHERE status = 'COMPLETED' ORDER BY stop_number DESC LIMIT 1;"
-                ) ??
-                db.getFirstSync<StopRecord>(
-                    'SELECT * FROM stops ORDER BY stop_number ASC LIMIT 1;'
-                )
-            );
-        } catch (err) {
-            console.warn('[CompleteScreen] Error querying completed stop:', err);
-            return null;
-        }
-    }, [completedStopId]);
-
-    // Query next pending stop from SQLite
-    const nextStop = useMemo<StopRecord | null>(() => {
-        try {
-            if (nextStopId) {
-                const found = db.getFirstSync<StopRecord>(
-                    "SELECT * FROM stops WHERE (id = ? OR stop_number = ?) AND status = 'PENDING' LIMIT 1;",
-                    [nextStopId, Number(nextStopId) || 0]
-                );
-                if (found) return found;
-            }
-            // Query the first pending stop in sequence
-            return db.getFirstSync<StopRecord>(
-                "SELECT * FROM stops WHERE status = 'PENDING' ORDER BY stop_number ASC LIMIT 1;"
-            );
-        } catch (err) {
-            console.warn('[CompleteScreen] Error querying next stop:', err);
-            return null;
-        }
-    }, [nextStopId]);
-
-    // Formatted labels & timestamps
-    const completedStopNumber = completedStop
-        ? String(completedStop.stop_number).padStart(2, '0')
-        : '02';
-    const completedStore = completedStop?.store_name ?? 'Fresh Store #22';
-    const completedItems = completedStop?.items_count ?? 28;
-
-    const timestamp = useMemo(
-        () =>
-            new Date().toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-            }),
-        []
-    );
-
-    // Next stop metadata
-    const nextStopNumber = nextStop
-        ? String(nextStop.stop_number).padStart(2, '0')
-        : null;
-    const nextDetails = nextStop ? stopDetails[nextStopNumber ?? '03'] : null;
-    const nextDistance = nextDetails?.distance ?? '4.8 km';
-
-    // Dynamic ETA: Current time + 24 minutes
-    const nextEta = useMemo(() => {
-        const etaDate = new Date();
-        etaDate.setMinutes(etaDate.getMinutes() + 24);
-        return etaDate.toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-        });
-    }, []);
+    const row = latestPodRow(outbox, stop.id);
+    const payload = podPayload(row);
+    const syncState = podSyncState(row);
+    const isSynced = syncState === 'synced' || syncState === 'none';
+    const isFailed = stop.status === 'FAILED' || payload?.outcome === 'failed';
+    const completedAt = formatTimestamp(payload?.capturedAt ?? stop.completedAt);
+    const nextStop = nextOpenStop(stops, stop.id);
+    const nextDistance = nextStop ? distanceLabel(liveCoords, nextStop) : null;
+    const nextEta = nextStop ? formatTimestamp(nextStop.estimatedArrival) : null;
 
     const handleViewNextStop = () => {
         if (!nextStop) return;
-        router.navigate({
-            pathname: '/current-stop',
-            params: {
-                stop: String(nextStop.stop_number).padStart(2, '0'),
-                stopId: nextStop.id,
-            },
-        });
+        router.navigate({ pathname: '/current-stop', params: { stopId: nextStop.id } });
     };
 
     return (
         <Screen
             background={
                 <LinearGradient
-                    colors={[W.greenSoft, Colors.canvasBackground]}
+                    colors={[isFailed ? W.orangeSoft : W.greenSoft, Colors.canvasBackground]}
                     locations={[0, 0.45]}
                     style={styles.backdropGradient}
                 />
             }
             contentStyle={{ paddingBottom: Math.max(32, insets.bottom + 20) }}>
-            {/* Section 1: Top Confirmation Badge */}
             <View style={styles.confirmationHero}>
                 <View style={styles.celebrationRings}>
-                    <View style={styles.celebrationCircle}>
-                        <Icon name="check" size={38} color={Colors.surfaceWhite} />
+                    <View style={[styles.celebrationCircle, isFailed && { backgroundColor: Colors.warningOrange }]}>
+                        <Icon name={isFailed ? 'alert' : 'check'} size={38} color={Colors.surfaceWhite} />
                     </View>
                 </View>
 
                 <View style={styles.heroTagPill}>
                     <Text style={styles.heroTagText}>
-                        STOP {completedStopNumber} • {timestamp}
+                        STOP {padStop(stop.sequence)}
+                        {completedAt ? ` • ${completedAt}` : ''}
                     </Text>
                 </View>
 
-                <Text style={styles.heroTitle}>Delivery Complete</Text>
-                <Text style={styles.heroSubtitle}>{completedStore}</Text>
+                <Text style={styles.heroTitle}>{isFailed ? 'Delivery Failed' : 'Delivery Complete'}</Text>
+                <Text style={styles.heroSubtitle}>{stop.storeName}</Text>
             </View>
 
-            {/* Section 2: Delivery Summary Card */}
             <Card style={styles.summaryCard}>
                 <View style={styles.summaryCardHead}>
                     <View style={{ flex: 1 }}>
                         <Label spacing={0.1}>DELIVERY SUMMARY</Label>
-                        <Text style={styles.summaryStoreTitle}>{completedStore}</Text>
+                        <Text style={styles.summaryStoreTitle}>{stop.storeName}</Text>
                     </View>
                     <Pill
-                        background={W.greenSoft}
-                        color={W.greenDark}
-                        icon="check"
+                        background={isFailed ? W.orangeSoft : W.greenSoft}
+                        color={isFailed ? Colors.offlineText : W.greenDark}
+                        icon={isFailed ? 'alert' : 'check'}
                         textSize={8.5}
                         height={26}>
-                        Complete
+                        {isFailed ? 'Failed' : payload?.outcome === 'partial' ? 'Partial' : 'Complete'}
                     </Pill>
                 </View>
 
-                {/* Row 1: Items delivered */}
-                <View style={styles.summaryRow}>
-                    <View style={styles.summaryRowLeft}>
-                        <Icon name="box" size={17} color={Colors.textSecondary} />
-                        <Text style={styles.summaryRowLabel}>Items delivered</Text>
-                    </View>
-                    <View style={styles.summaryRowRight}>
-                        <Text style={styles.summaryRowValue}>
-                            {completedItems} / {completedItems}
-                        </Text>
-                        <View style={styles.statusCheckSmall}>
-                            <Icon name="check" size={12} color={W.greenDark} />
-                        </View>
-                    </View>
-                </View>
+                {payload && (
+                    <>
+                        <SummaryRow
+                            icon="box"
+                            label="Items delivered"
+                            value={`${payload.itemsDelivered} / ${payload.itemsExpected}`}
+                            ok={payload.itemsDelivered === payload.itemsExpected}
+                        />
+                        <SummaryRow
+                            icon="signature"
+                            label="Signature"
+                            value={payload.signaturePng ? 'Captured' : 'Not captured'}
+                            ok={Boolean(payload.signaturePng)}
+                        />
+                        <SummaryRow
+                            icon="camera"
+                            label="Delivery photo"
+                            value={payload.photo ? (payload.photoPath ? 'Uploaded' : 'Saved on device') : 'Not captured'}
+                            ok={Boolean(payload.photo)}
+                        />
+                    </>
+                )}
 
-                {/* Row 2: Signature */}
-                <View style={styles.summaryRow}>
-                    <View style={styles.summaryRowLeft}>
-                        <Icon name="signature" size={17} color={Colors.textSecondary} />
-                        <Text style={styles.summaryRowLabel}>Signature</Text>
-                    </View>
-                    <View style={styles.summaryRowRight}>
-                        <Text style={styles.summaryRowValue}>Received</Text>
-                        <View style={styles.statusCheckSmall}>
-                            <Icon name="check" size={12} color={W.greenDark} />
-                        </View>
-                    </View>
-                </View>
-
-                {/* Row 3: Delivery photo */}
-                <View style={styles.summaryRow}>
-                    <View style={styles.summaryRowLeft}>
-                        <Icon name="camera" size={17} color={Colors.textSecondary} />
-                        <Text style={styles.summaryRowLabel}>Delivery photo</Text>
-                    </View>
-                    <View style={styles.summaryRowRight}>
-                        <Text style={styles.summaryRowValue}>
-                            {isOnline ? 'Uploaded' : 'Saved locally'}
-                        </Text>
-                        <View style={styles.statusCheckSmall}>
-                            <Icon name="check" size={12} color={W.greenDark} />
-                        </View>
-                    </View>
-                </View>
-
-                {/* Row 4: Dispatcher sync */}
                 <View style={[styles.summaryRow, { borderBottomWidth: 0 }]}>
                     <View style={styles.summaryRowLeft}>
                         <Icon
-                            name={isOnline ? 'cloud' : 'clock'}
+                            name={isSynced ? 'cloud' : 'clock'}
                             size={17}
-                            color={isOnline ? W.greenDark : Colors.warningOrange}
+                            color={isSynced ? W.greenDark : Colors.warningOrange}
                         />
                         <Text style={styles.summaryRowLabel}>Dispatcher sync</Text>
                     </View>
                     <View style={styles.summaryRowRight}>
-                        {isOnline ? (
+                        {isSynced ? (
                             <>
-                                <Text style={[styles.summaryRowValue, { color: W.greenDark }]}>
-                                    Synced
-                                </Text>
+                                <Text style={[styles.summaryRowValue, { color: W.greenDark }]}>{SYNC_TEXT[syncState]}</Text>
                                 <View style={styles.statusCheckSmall}>
                                     <Icon name="check" size={12} color={W.greenDark} />
                                 </View>
@@ -234,7 +148,7 @@ export default function DeliveryCompleteScreen() {
                             <View style={styles.syncPendingPill}>
                                 <View style={styles.syncPendingDot} />
                                 <Text style={styles.syncPendingText}>
-                                    Pending sync ({pendingCount} in queue)
+                                    {SYNC_TEXT[syncState]} ({pendingCount} in queue)
                                 </Text>
                             </View>
                         )}
@@ -242,7 +156,6 @@ export default function DeliveryCompleteScreen() {
                 </View>
             </Card>
 
-            {/* Section 3: Next Stop Handover Card OR Route Complete */}
             {nextStop ? (
                 <LinearGradient
                     colors={['#FFFBEB', Colors.surfaceWhite]}
@@ -251,19 +164,19 @@ export default function DeliveryCompleteScreen() {
                     style={styles.nextStopCard}>
                     <View style={styles.nextStopHead}>
                         <View style={styles.nextStopBadge}>
-                            <Text style={styles.nextStopBadgeText}>
-                                UP NEXT • STOP {nextStopNumber}
-                            </Text>
+                            <Text style={styles.nextStopBadgeText}>UP NEXT • STOP {padStop(nextStop.sequence)}</Text>
                         </View>
                     </View>
 
                     <View style={styles.nextStoreRow}>
                         <View style={{ flex: 1 }}>
-                            <Text style={styles.nextStoreTitle}>{nextStop.store_name}</Text>
-                            <View style={styles.nextStoreCityRow}>
-                                <Icon name="pin" size={14} color={Colors.textSecondary} />
-                                <Text style={styles.nextStoreCityText}>{nextStop.address}</Text>
-                            </View>
+                            <Text style={styles.nextStoreTitle}>{nextStop.storeName}</Text>
+                            {nextStop.address ? (
+                                <View style={styles.nextStoreCityRow}>
+                                    <Icon name="pin" size={14} color={Colors.textSecondary} />
+                                    <Text style={styles.nextStoreCityText}>{nextStop.address}</Text>
+                                </View>
+                            ) : null}
                         </View>
 
                         <View style={styles.nextChevronBox}>
@@ -271,31 +184,31 @@ export default function DeliveryCompleteScreen() {
                         </View>
                     </View>
 
-                    {/* 3-Column Metadata Bar */}
                     <View style={styles.nextMetricsBar}>
                         <View style={[styles.nextMetricItem, { flex: 1.3 }]}>
                             <Text style={styles.nextMetricLabel}>WINDOW</Text>
-                            <Text style={styles.nextMetricValue}>{nextStop.window}</Text>
+                            <Text style={styles.nextMetricValue}>{nextStop.window ?? '—'}</Text>
                         </View>
-
-                        <View style={styles.nextMetricDivider} />
-
-                        <View style={styles.nextMetricItem}>
-                            <Text style={styles.nextMetricLabel}>DISTANCE</Text>
-                            <Text style={styles.nextMetricValue}>{nextDistance}</Text>
-                        </View>
-
-                        <View style={styles.nextMetricDivider} />
-
-                        <View style={styles.nextMetricItem}>
-                            <Text style={styles.nextMetricLabel}>ETA</Text>
-                            <Text style={[styles.nextMetricValue, { color: '#8A5900' }]}>
-                                {nextEta}
-                            </Text>
-                        </View>
+                        {nextDistance && (
+                            <>
+                                <View style={styles.nextMetricDivider} />
+                                <View style={styles.nextMetricItem}>
+                                    <Text style={styles.nextMetricLabel}>DISTANCE</Text>
+                                    <Text style={styles.nextMetricValue}>{nextDistance}</Text>
+                                </View>
+                            </>
+                        )}
+                        {nextEta && (
+                            <>
+                                <View style={styles.nextMetricDivider} />
+                                <View style={styles.nextMetricItem}>
+                                    <Text style={styles.nextMetricLabel}>ETA</Text>
+                                    <Text style={[styles.nextMetricValue, { color: '#8A5900' }]}>{nextEta}</Text>
+                                </View>
+                            </>
+                        )}
                     </View>
 
-                    {/* Primary CTA Button */}
                     <Pressable
                         onPress={handleViewNextStop}
                         accessibilityRole="button"
@@ -309,32 +222,28 @@ export default function DeliveryCompleteScreen() {
                     </Pressable>
                 </LinearGradient>
             ) : (
-                /* All Stops Completed State */
                 <Card style={styles.allCompletedCard}>
                     <View style={styles.allCompletedCircle}>
                         <Icon name="route" size={28} color={W.greenDark} />
                     </View>
-                    <Text style={styles.allCompletedTitle}>
-                        Route Complete! All stops delivered.
-                    </Text>
+                    <Text style={styles.allCompletedTitle}>Route complete! All stops closed.</Text>
                     <Text style={styles.allCompletedSubtext}>
-                        You have successfully completed all scheduled delivery drops for this shift.
+                        Every stop on this trip has a proof of delivery.
                     </Text>
                     <Pressable
                         onPress={() => router.navigate('/history')}
                         accessibilityRole="button"
-                        accessibilityLabel="Return to Shift Summary"
+                        accessibilityLabel="View Delivery History"
                         style={({ pressed }) => [
                             styles.viewNextButton,
                             { marginTop: 14 },
                             pressed && { opacity: 0.9 },
                         ]}>
-                        <Text style={styles.viewNextButtonText}>Return to Shift Summary</Text>
+                        <Text style={styles.viewNextButtonText}>View Delivery History</Text>
                     </Pressable>
                 </Card>
             )}
 
-            {/* Section 4: Secondary Action & Safety Disclaimer */}
             <Pressable
                 onPress={() => router.navigate('/route')}
                 accessibilityRole="button"
@@ -353,6 +262,25 @@ export default function DeliveryCompleteScreen() {
                 </Text>
             </View>
         </Screen>
+    );
+}
+
+function SummaryRow({ icon, label, value, ok }: { icon: IconName; label: string; value: string; ok: boolean }) {
+    return (
+        <View style={styles.summaryRow}>
+            <View style={styles.summaryRowLeft}>
+                <Icon name={icon} size={17} color={Colors.textSecondary} />
+                <Text style={styles.summaryRowLabel}>{label}</Text>
+            </View>
+            <View style={styles.summaryRowRight}>
+                <Text style={styles.summaryRowValue}>{value}</Text>
+                {ok && (
+                    <View style={styles.statusCheckSmall}>
+                        <Icon name="check" size={12} color={W.greenDark} />
+                    </View>
+                )}
+            </View>
+        </View>
     );
 }
 

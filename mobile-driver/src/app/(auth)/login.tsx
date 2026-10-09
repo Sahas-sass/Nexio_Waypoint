@@ -1,57 +1,55 @@
+import Constants from 'expo-constants';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Alert } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/waypoint/icon';
-import { Button, Eyebrow, PageTitle, StatusDot, WText } from '@/components/waypoint/ui';
+import { Button, WText } from '@/components/waypoint/ui';
+import { signInDriver } from '@/features/auth/services/authService';
+import { useAuthStore } from '@/features/auth/store/authStore';
+import { useSyncStore } from '@/features/sync/store/syncStore';
+import { isSupabaseConfigured, supabase } from '@/lib/supabaseClient';
 import { Colors, font, Radius, Shadow, W } from '@/utils/theme';
-import { supabase } from '@/lib/supabaseClient';
+
+const APP_VERSION = Constants.expoConfig?.version;
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
-  const [driverId, setDriverId] = useState('driver');
-  const [pin, setPin] = useState('248600');
-  const [showPin, setShowPin] = useState(false);
-  const [rememberDevice, setRememberDevice] = useState(true);
-  const [focusedInput, setFocusedInput] = useState<'id' | 'pin' | null>(null);
+  const isOnline = useSyncStore((s) => s.isOnline);
+  const notice = useAuthStore((s) => s.notice);
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [focusedInput, setFocusedInput] = useState<'id' | 'password' | null>(null);
   const [loading, setLoading] = useState(false);
-  const isOnline = true; // TODO: replace with actual network status hook
+  const [error, setError] = useState<string | null>(null);
+
+  const message = error ?? notice;
 
   const signIn = async () => {
-    if (!driverId || !pin) {
-      Alert.alert('Error', 'Please enter your Driver ID or Mobile Number, and your PIN.');
+    if (!isSupabaseConfigured) {
+      console.log('[Login] Supabase not configured, signing in locally with offline store');
+      router.replace('/route');
       return;
     }
 
+    if (!isOnline) {
+      setError('You are offline. Connect to the internet to sign in.');
+      return;
+    }
     setLoading(true);
+    setError(null);
+    useAuthStore.getState().clearNotice();
     try {
-      const normalizedInput = driverId.replace(/[-()\s]/g, '');
-      const isMobile = /^\+?[0-9]{10,15}$/.test(normalizedInput);
-      
-      let result;
-      if (isMobile) {
-        result = await supabase.auth.signInWithPassword({
-          phone: normalizedInput,
-          password: pin,
-        });
-      } else {
-        const email = `${driverId.toLowerCase().trim()}@waypoint.com`;
-        result = await supabase.auth.signInWithPassword({
-          email,
-          password: pin,
-        });
-      }
-
-      if (result.error) {
-        Alert.alert('Sign In Failed', result.error.message);
-      } else {
-        router.replace('/route');
-      }
-    } catch (error) {
-      Alert.alert('Error', 'An unexpected error occurred during sign in.');
+      const profile = await signInDriver(supabase, identifier, password);
+      setPassword('');
+      useAuthStore.getState().setSignedIn(profile.id);
+      router.replace('/route');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign in failed.');
     } finally {
       setLoading(false);
     }
@@ -95,7 +93,6 @@ export default function LoginScreen() {
 
         {/* Rounded Surface Container */}
         <View style={styles.surfaceCard}>
-          {/* Category Tag & Header */}
           <View style={styles.categoryBadge}>
             <Text style={styles.categoryText}>DRIVER ACCESS</Text>
           </View>
@@ -105,65 +102,54 @@ export default function LoginScreen() {
             Sign in to view today&apos;s route and begin your shift.
           </Text>
 
-          {/* Input 1: Driver ID or mobile number */}
+          {/* Driver ID or email */}
           <View style={styles.fieldContainer}>
-            <Text style={styles.fieldLabel}>Driver ID or mobile number</Text>
-            <View
-              style={[
-                styles.inputWrapper,
-                focusedInput === 'id' && styles.inputWrapperFocused,
-              ]}>
+            <Text style={styles.fieldLabel}>Driver ID or email</Text>
+            <View style={[styles.inputWrapper, focusedInput === 'id' && styles.inputWrapperFocused]}>
               <Icon name="user" size={19} color="#8A6B10" />
               <TextInput
-                value={driverId}
-                onChangeText={setDriverId}
-                placeholder="Enter driver ID or mobile"
+                value={identifier}
+                onChangeText={setIdentifier}
+                placeholder="e.g. driver or driver@waypoint.com"
                 placeholderTextColor={Colors.textSecondary}
                 autoComplete="username"
-                autoCapitalize="characters"
-                accessibilityLabel="Driver ID or mobile number"
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                accessibilityLabel="Driver ID or email"
                 onFocus={() => setFocusedInput('id')}
                 onBlur={() => setFocusedInput(null)}
                 style={styles.inputControl}
               />
-              {driverId.length > 0 && (
-                <View style={styles.validCheckBadge}>
-                  <Icon name="check" size={12} color={W.greenDark} />
-                </View>
-              )}
             </View>
           </View>
 
+          {/* Password */}
           <View style={styles.fieldContainer}>
             <View style={styles.fieldLabelRow}>
               <WText size={9} weight={800} color="#4f5154">
-                Secure PIN
-              </WText>
-              <WText size={8} weight={600} color={W.gray}>
-                6 digits
+                Password
               </WText>
             </View>
-            <View
-              style={[
-                styles.inputWrapper,
-                focusedInput === 'pin' && styles.inputWrapperFocused,
-              ]}>
+            <View style={[styles.inputWrapper, focusedInput === 'password' && styles.inputWrapperFocused]}>
               <Icon name="lock" size={19} color="#8A6B10" />
               <TextInput
-                value={pin}
-                onChangeText={setPin}
-                secureTextEntry={!showPin}
-                keyboardType="number-pad"
-                maxLength={6}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
                 autoComplete="current-password"
-                accessibilityLabel="Secure PIN"
-                onFocus={() => setFocusedInput('pin')}
+                accessibilityLabel="Password"
+                onFocus={() => setFocusedInput('password')}
                 onBlur={() => setFocusedInput(null)}
+                onSubmitEditing={signIn}
+                returnKeyType="go"
                 style={styles.inputControl}
               />
               <Pressable
-                onPress={() => setShowPin(!showPin)}
-                accessibilityLabel={showPin ? 'Hide PIN' : 'Show PIN'}
+                onPress={() => setShowPassword(!showPassword)}
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 style={styles.pinVisibilityButton}>
                 <Icon name="eye" size={18} color={Colors.textSecondary} />
@@ -171,27 +157,12 @@ export default function LoginScreen() {
             </View>
           </View>
 
-          {/* Checkbox Row: Remember this device + Forgot PIN */}
-          <View style={styles.optionsRow}>
-            <Pressable
-              onPress={() => setRememberDevice(!rememberDevice)}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: rememberDevice }}
-              style={styles.checkboxWrapper}>
-              <View
-                style={[
-                  styles.checkboxBox,
-                  rememberDevice && styles.checkboxBoxChecked,
-                ]}>
-                {rememberDevice && <Icon name="check" size={12} color="#4A3400" />}
-              </View>
-              <Text style={styles.checkboxLabel}>Remember this device</Text>
-            </Pressable>
-
-            <Pressable hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={styles.forgotPinText}>Forgot PIN?</Text>
-            </Pressable>
-          </View>
+          {message && (
+            <View style={styles.errorBox} accessibilityRole="alert">
+              <Icon name="alert" size={15} color="#A65F00" />
+              <Text style={styles.errorText}>{message}</Text>
+            </View>
+          )}
 
           <Button onPress={signIn} trailingIcon="chevron" disabled={loading}>
             {loading ? 'Signing in...' : 'Sign in to Waypoint'}
@@ -201,34 +172,8 @@ export default function LoginScreen() {
           <View style={styles.trustBadge}>
             <Icon name="shield" size={15} color={W.greenDark} />
             <Text style={styles.trustBadgeText}>
-              Secure driver access • Your credentials are encrypted on this device
+              Driver accounts only • Your session stays on this device for offline work
             </Text>
-          </View>
-
-          {/* Divider */}
-          <View style={styles.dividerContainer}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-          </View>
-
-          {/* Secondary Action Button */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Sign in with mobile OTP"
-            style={({ pressed }) => [
-              styles.secondaryButton,
-              pressed && styles.secondaryButtonPressed,
-            ]}>
-            <Icon name="phone" size={17} color={Colors.textPrimary} />
-            <Text style={styles.secondaryButtonText}>Sign in with mobile OTP</Text>
-          </Pressable>
-
-          {/* Help Link */}
-          <View style={styles.helpContainer}>
-            <Text style={styles.helpText}>Having trouble signing in? </Text>
-            <Pressable hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={styles.contactDispatchText}>Contact Dispatch</Text>
-            </Pressable>
           </View>
         </View>
 
@@ -240,19 +185,12 @@ export default function LoginScreen() {
               { backgroundColor: isOnline ? Colors.successGreen : Colors.warningOrange },
             ]}
           />
-          <Text
-            style={[
-              styles.statusText,
-              { color: isOnline ? W.greenDark : Colors.warningOrange },
-            ]}>
-            {isOnline
-              ? 'Online • Secure connection'
-              : 'Offline mode • Local storage active'}
+          <Text style={[styles.statusText, { color: isOnline ? W.greenDark : Colors.warningOrange }]}>
+            {isOnline ? 'Online • Secure connection' : 'Offline • Connect to sign in'}
           </Text>
         </View>
 
-        {/* App Version */}
-        <Text style={styles.versionText}>Waypoint Delivery v2.8.4</Text>
+        {APP_VERSION && <Text style={styles.versionText}>Waypoint Delivery v{APP_VERSION}</Text>}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -391,11 +329,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     letterSpacing: 0.1,
   },
-  pinHint: {
-    ...font(600),
-    fontSize: 10,
-    color: Colors.textSecondary,
-  },
   inputWrapper: {
     height: 52,
     borderWidth: 1.5,
@@ -420,14 +353,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     ...font(700),
   },
-  validCheckBadge: {
-    width: 22,
-    height: 22,
-    borderRadius: 8,
-    backgroundColor: W.greenSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   pinVisibilityButton: {
     width: 36,
     height: 36,
@@ -435,62 +360,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  optionsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 2,
-    marginBottom: 20,
-  },
-  checkboxWrapper: {
+  errorBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    padding: 10,
+    marginBottom: 14,
+    borderRadius: 12,
+    backgroundColor: W.orangeSoft,
   },
-  checkboxBox: {
-    width: 20,
-    height: 20,
-    borderWidth: 1.5,
-    borderColor: '#C4C7CC',
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.surfaceWhite,
-  },
-  checkboxBoxChecked: {
-    borderColor: Colors.primaryYellow,
-    backgroundColor: Colors.primaryYellow,
-  },
-  checkboxLabel: {
-    ...font(600),
-    fontSize: 12,
-    color: Colors.textSecondary,
-  },
-  forgotPinText: {
+  errorText: {
     ...font(700),
+    flex: 1,
     fontSize: 12,
-    color: '#8C6200',
-  },
-  primaryButton: {
-    minHeight: 52,
-    borderRadius: Radius.sm,
-    backgroundColor: Colors.primaryYellow,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-    boxShadow: Shadow.yellow,
-  },
-  primaryButtonPressed: {
-    transform: [{ scale: 0.985 }],
-    opacity: 0.92,
-  },
-  primaryButtonText: {
-    ...font(800),
-    fontSize: 15,
-    color: Colors.textPrimary,
-    letterSpacing: -0.2,
+    lineHeight: 16,
+    color: '#8A5900',
   },
   trustBadge: {
     flexDirection: 'row',
@@ -507,64 +391,6 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     color: Colors.textSecondary,
     textAlign: 'center',
-  },
-  dividerContainer: {
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: 4,
-  },
-  dividerLine: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    height: 1,
-    backgroundColor: '#ECECE7',
-  },
-  dividerText: {
-    ...font(600),
-    fontSize: 11,
-    color: '#9CA3AF',
-    backgroundColor: Colors.surfaceWhite,
-    paddingHorizontal: 12,
-  },
-  secondaryButton: {
-    minHeight: 48,
-    borderRadius: Radius.sm,
-    backgroundColor: Colors.surfaceWhite,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-    boxShadow: Shadow.sm,
-  },
-  secondaryButtonPressed: {
-    backgroundColor: '#F7F7F4',
-    transform: [{ scale: 0.985 }],
-  },
-  secondaryButtonText: {
-    ...font(700),
-    fontSize: 13,
-    color: Colors.textPrimary,
-  },
-  helpContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 16,
-  },
-  helpText: {
-    ...font(500),
-    fontSize: 11,
-    color: Colors.textSecondary,
-  },
-  contactDispatchText: {
-    ...font(800),
-    fontSize: 11,
-    color: '#8C6200',
   },
   bottomStatusContainer: {
     flexDirection: 'row',

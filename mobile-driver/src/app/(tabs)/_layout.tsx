@@ -17,7 +17,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="history" />
       <Tabs.Screen name="more" />
       <Tabs.Screen name="pod/[stopId]" options={{ href: null }} />
-      <Tabs.Screen name="complete/[stopId]" options={{ href: null }} />
+      <Tabs.Screen name="pod/complete" options={{ href: null }} />
     </Tabs>
   );
 }

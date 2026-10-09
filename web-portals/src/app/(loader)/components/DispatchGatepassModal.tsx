@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ShieldCheck, CheckCircle2, Truck, X, Printer, Download } from "lucide-react";
+import { CheckCircle2, X, Printer } from "lucide-react";
 import { TripVehicle } from "../types";
 import { createGatepassPayload, generateGatepassQrDataUrl } from "../utils/gatepass";
 
@@ -25,6 +25,7 @@ export default function DispatchGatepassModal({
   discrepancyNote,
 }: DispatchGatepassModalProps) {
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
+  const [qrError, setQrError] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -33,7 +34,7 @@ export default function DispatchGatepassModal({
 
     generateGatepassQrDataUrl(qrPayload)
       .then((url) => setQrDataUrl(url))
-      .catch((err) => console.error("QR Code error:", err));
+      .catch(() => setQrError(true));
   }, [isOpen, trip, sealNumber, signature, hasDiscrepancy]);
 
   if (!isOpen) return null;
@@ -87,7 +88,7 @@ export default function DispatchGatepassModal({
               </div>
             ) : (
               <div className="w-44 h-44 bg-gray-100 rounded-2xl flex items-center justify-center text-xs font-bold text-gray-400">
-                Generating QR...
+                {qrError ? "QR generation failed" : "Generating QR..."}
               </div>
             )}
             <p className="text-[11px] font-mono font-bold text-gray-600 mt-2">
@@ -106,7 +107,7 @@ export default function DispatchGatepassModal({
             <div>
               <span className="text-[10px] text-gray-400 font-bold uppercase block">Assigned Driver</span>
               <span className="font-bold text-gray-800">{trip.driverName}</span>
-              <span className="text-[10px] text-gray-500 block">{trip.driverPhone}</span>
+              {trip.driverPhone && <span className="text-[10px] text-gray-500 block">{trip.driverPhone}</span>}
             </div>
           </div>
 
@@ -123,7 +124,7 @@ export default function DispatchGatepassModal({
           {hasDiscrepancy && (
             <div className="p-2.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
               <strong className="block font-bold">Discrepancy Logged:</strong>
-              <span>{discrepancyNote || "Items reported with exception at bay."}</span>
+              {discrepancyNote && <span>{discrepancyNote}</span>}
             </div>
           )}
         </div>

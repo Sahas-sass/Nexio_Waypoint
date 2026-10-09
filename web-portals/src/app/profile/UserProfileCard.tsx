@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { 
   Pencil, 
   Camera, 
@@ -49,7 +49,8 @@ export default function UserProfileCard() {
   const role = profile?.role || "loader";
   const roleConfig = getRoleConfig(role);
 
-  useEffect(() => {
+  // Copy the saved profile into the form each time the edit dialog opens
+  const openEditModal = () => {
     if (profile) {
       setFormName(profile.fullName || "");
       setFormPhone(profile.phone || "");
@@ -58,7 +59,8 @@ export default function UserProfileCard() {
       setFormEmployeeId(profile.employeeId || "");
       setFormAssignedMeta(profile.assignedMeta || "");
     }
-  }, [profile, roleConfig.defaultDepartment]);
+    setIsEditModalOpen(true);
+  };
 
   // Dynamic values loaded directly from database and roleConfig
   const roleTitle = profile?.roleTitle || roleConfig.title;
@@ -69,12 +71,12 @@ export default function UserProfileCard() {
   const displayEmail = profile?.email || "";
   const displayPhone = profile?.phone || "Not configured";
   const displayDepartment = profile?.department || roleConfig.defaultDepartment;
-  const displayEmployeeId = profile?.employeeId || `${roleConfig.defaultEmployeeIdPrefix}-001`;
+  const displayEmployeeId = profile?.employeeId || "Not assigned";
   const displayLocation = roleConfig.getLocationDisplay(profile);
   const displayAssignedMeta = roleConfig.getMetaDisplay(profile);
   const assignedLabel = roleConfig.assignedLabel;
-  const isVerified = profile?.isVerified ?? true;
-  const status = profile?.status || "Online";
+  const isVerified = profile?.isVerified ?? false;
+  const status = profile?.status || "Unknown";
   const avatarUrl = profile?.avatarUrl;
   const initials = profile?.initials || "WP";
 
@@ -93,8 +95,8 @@ export default function UserProfileCard() {
       setUploadError(null);
       await uploadAvatar(file);
       await refetch();
-    } catch (err: any) {
-      setUploadError(err?.message || "Failed to upload avatar photo");
+    } catch (err) {
+      setUploadError(err instanceof Error && err.message ? err.message : "Failed to upload avatar photo");
     } finally {
       setIsUploadingPhoto(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -112,7 +114,6 @@ export default function UserProfileCard() {
         department: formDepartment,
         outlet: formOutlet,
         assignedBay: (roleConfig.role === "loader" || roleConfig.role === "driver") ? formOutlet : undefined,
-        employeeId: formEmployeeId,
         assignedMeta: formAssignedMeta,
       });
       await refetch();
@@ -121,8 +122,8 @@ export default function UserProfileCard() {
         setSaveSuccess(false);
         setIsEditModalOpen(false);
       }, 1000);
-    } catch (err: any) {
-      setUploadError(err?.message || "Failed to save profile changes to database");
+    } catch (err) {
+      setUploadError(err instanceof Error && err.message ? err.message : "Failed to save profile changes to database");
     } finally {
       setIsSaving(false);
     }
@@ -228,7 +229,7 @@ export default function UserProfileCard() {
           <div className="self-center sm:self-start">
             <button
               type="button"
-              onClick={() => setIsEditModalOpen(true)}
+              onClick={openEditModal}
               className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-gray-50 border border-gray-200/90 rounded-xl text-xs font-bold text-gray-700 shadow-2xs transition-colors cursor-pointer"
             >
               <Pencil className="w-3.5 h-3.5 text-gray-500" />
@@ -420,7 +421,7 @@ export default function UserProfileCard() {
           <div className="bg-white rounded-2xl sm:rounded-3xl border border-[#E8E8E3] p-4 shadow-xs divide-y divide-gray-100">
             <button
               type="button"
-              onClick={() => setIsEditModalOpen(true)}
+              onClick={openEditModal}
               className="w-full flex items-center justify-between py-2.5 px-3 hover:bg-gray-50 rounded-xl text-xs font-semibold text-gray-700 transition-colors text-left cursor-pointer"
             >
               <div className="flex items-center gap-3">
@@ -524,8 +525,9 @@ export default function UserProfileCard() {
                   <input
                     type="text"
                     value={formEmployeeId}
-                    onChange={(e) => setFormEmployeeId(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-waypoint-yellow/50"
+                    readOnly
+                    title="Employee ID is managed by dispatch"
+                    className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-500 cursor-not-allowed"
                   />
                 </div>
 

@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -10,112 +10,79 @@ import {
 } from 'react-native';
 
 import { Icon } from '@/components/waypoint/icon';
-import { deliveryPhoto } from '@/data/mock';
+import { toCapturedPhoto, type CapturedPhoto } from '@/features/pod/utils/photoAsset';
+import { formatTimestamp } from '@/utils/formatters';
 import { Colors, font, Radius, Shadow, W } from '@/utils/theme';
 
 export interface CameraCaptureProps {
-  onCapture: (imageUri: string) => void;
-  imageUri?: string | null;
-  // Compatibility with existing screen
-  captured?: boolean;
+  onCapture: (photo: CapturedPhoto | null) => void;
+  photo: CapturedPhoto | null;
 }
 
-export function CameraCapture({
-  onCapture,
-  imageUri: propImageUri,
-  captured: propCaptured,
-}: CameraCaptureProps) {
-  const [photoUri, setPhotoUri] = useState<string | null>(
-    propImageUri ?? (propCaptured ? deliveryPhoto : null)
-  );
-  const [timestamp, setTimestamp] = useState<string | null>(
-    propCaptured ? '8:23 AM' : null
-  );
+const PICKER_OPTIONS: ImagePicker.ImagePickerOptions = {
+  mediaTypes: ['images'],
+  quality: 0.5,
+  base64: true,
+  allowsEditing: false,
+};
 
-  const isCaptured = Boolean(photoUri || propCaptured);
+export function CameraCapture({ onCapture, photo }: CameraCaptureProps) {
+  const [capturedAt, setCapturedAt] = useState<string | null>(null);
+  const isCaptured = Boolean(photo);
+
+  useEffect(() => {
+    if (!photo) {
+      setCapturedAt(null);
+    }
+  }, [photo]);
+
+  const accept = (result: ImagePicker.ImagePickerResult) => {
+    if (result.canceled) return;
+    const captured = toCapturedPhoto(result.assets?.[0]);
+    if (!captured) {
+      Alert.alert('Photo unavailable', 'The selected image could not be read. Please try again.');
+      return;
+    }
+    setCapturedAt(formatTimestamp(Date.now()));
+    onCapture(captured);
+  };
 
   const capturePhoto = async () => {
     try {
-      // Request camera permissions
       const permission = await ImagePicker.requestCameraPermissionsAsync();
-
-      let result: ImagePicker.ImagePickerResult;
-
-      if (permission.granted) {
-        result = await ImagePicker.launchCameraAsync({
-          mediaTypes: ['images'],
-          quality: 0.8,
-          allowsEditing: false,
-        });
-      } else {
-        // Fallback to media library if camera permission is not granted
-        result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ['images'],
-          quality: 0.8,
-        });
+      if (!permission.granted) {
+        Alert.alert(
+          'Camera access needed',
+          'Allow camera access in your device settings to photograph the delivery, or choose a photo from the library.'
+        );
+        return;
       }
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const uri = result.assets[0].uri;
-        const now = new Date().toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-        setPhotoUri(uri);
-        setTimestamp(now);
-        onCapture(uri);
-      }
+      accept(await ImagePicker.launchCameraAsync(PICKER_OPTIONS));
     } catch (err) {
-      console.warn('[CameraCapture] Camera unavailable, using demo photo fallback:', err);
-      // Graceful fallback for simulators without camera hardware
-      const fallbackUri = deliveryPhoto;
-      const now = new Date().toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-      setPhotoUri(fallbackUri);
-      setTimestamp(now);
-      onCapture(fallbackUri);
+      Alert.alert('Camera unavailable', err instanceof Error ? err.message : 'Could not open the camera.');
     }
   };
 
   const chooseFromGallery = async () => {
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const uri = result.assets[0].uri;
-        const now = new Date().toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-        setPhotoUri(uri);
-        setTimestamp(now);
-        onCapture(uri);
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Photo library access needed', 'Allow photo library access in your device settings.');
+        return;
       }
+      accept(await ImagePicker.launchImageLibraryAsync(PICKER_OPTIONS));
     } catch (err) {
-      console.warn('[CameraCapture] Gallery error:', err);
+      Alert.alert('Photo library unavailable', err instanceof Error ? err.message : 'Could not open the photo library.');
     }
   };
 
   const handlePrompt = () => {
-    Alert.alert(
-      'Delivery Photo',
-      'Choose source for delivery verification photo:',
-      [
-        { text: 'Take Photo with Camera', onPress: capturePhoto },
-        { text: 'Choose from Photo Library', onPress: chooseFromGallery },
-        { text: 'Use Sample Verification Photo', onPress: () => {
-          setPhotoUri(deliveryPhoto);
-          setTimestamp('Just now');
-          onCapture(deliveryPhoto);
-        }},
-        { text: 'Cancel', style: 'cancel' },
-      ]
-    );
+    Alert.alert('Delivery Photo', 'Choose source for delivery verification photo:', [
+      { text: 'Take Photo with Camera', onPress: capturePhoto },
+      { text: 'Choose from Photo Library', onPress: chooseFromGallery },
+      ...(isCaptured ? [{ text: 'Remove Photo', style: 'destructive' as const, onPress: () => onCapture(null) }] : []),
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   return (
@@ -137,11 +104,10 @@ export function CameraCapture({
         )}
       </View>
 
-      {/* Captured Image Preview or Empty State */}
-      {isCaptured && photoUri ? (
+      {photo ? (
         <View style={styles.previewContainer}>
           <Image
-            source={{ uri: photoUri }}
+            source={{ uri: photo.uri }}
             style={StyleSheet.absoluteFill}
             contentFit="cover"
             accessibilityLabel="Captured proof of delivery photo"
@@ -149,7 +115,7 @@ export function CameraCapture({
           <View style={styles.photoStamp}>
             <Icon name="check" size={13} color={W.greenDark} />
             <Text style={styles.photoStampText}>
-              Photo captured • {timestamp ?? 'Verified'}
+              {capturedAt ? `Photo captured • ${capturedAt}` : 'Photo captured'}
             </Text>
           </View>
         </View>
@@ -172,7 +138,6 @@ export function CameraCapture({
         </Pressable>
       )}
 
-      {/* CTA Button */}
       <Pressable
         onPress={handlePrompt}
         accessibilityRole="button"
