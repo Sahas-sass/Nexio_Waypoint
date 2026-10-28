@@ -36,8 +36,8 @@ type RoleKey = keyof typeof roleContent;
 export default function LoginPage() {
   const router = useRouter();
   const [activeRole, setActiveRole] = useState<RoleKey>("dispatcher");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("dispatch@waypoint.com");
+  const [password, setPassword] = useState("Waypoint@2026");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -47,13 +47,25 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
 
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
+
+    if (!cleanEmail || !cleanPassword) {
+      setError("Please enter your work email and password.");
+      setLoading(false);
+      return;
+    }
+
     const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
+      email: cleanEmail,
+      password: cleanPassword,
     });
 
     if (error || !data.user) {
-      setError(error?.message ?? "Sign in failed");
+      const msg = error?.message?.toLowerCase().includes("invalid login credentials")
+        ? "Invalid login credentials. Please verify your email and password (passwords are case-sensitive: 'Waypoint@2026')."
+        : error?.message ?? "Sign in failed";
+      setError(msg);
       setLoading(false);
       return;
     }
@@ -62,7 +74,7 @@ export default function LoginPage() {
     const { data: profile } = await supabase.from("profiles").select("role").eq("id", data.user.id).maybeSingle();
     if (!hasPortal(profile?.role)) {
       await supabase.auth.signOut();
-      setError("This account has no web portal access. Drivers sign in with the mobile app.");
+      setError("This account is for drivers and has no web portal access. Please sign in to the driver app at https://nexio-waypoint-driver.vercel.app");
       setLoading(false);
       return;
     }
@@ -73,7 +85,7 @@ export default function LoginPage() {
   const handleRoleSelect = (role: RoleKey) => {
     setActiveRole(role);
     setEmail(roleContent[role].email);
-    setPassword("");
+    setPassword("Waypoint@2026");
     setError("");
   };
 

@@ -30,10 +30,11 @@ export async function requireDriver(client: AuthClient, userId: string): Promise
 /** Supabase email + password sign-in restricted to driver profiles. */
 export async function signInDriver(client: AuthClient, identifier: string, password: string): Promise<ProfileWithRole> {
   const email = normalizeIdentifier(identifier);
+  const cleanPassword = password?.trim();
   if (!email) throw new Error('Enter your driver ID or email.');
-  if (!password) throw new Error('Enter your password.');
+  if (!cleanPassword) throw new Error('Enter your password.');
 
-  const { data, error } = await client.auth.signInWithPassword({ email, password });
+  const { data, error } = await client.auth.signInWithPassword({ email, password: cleanPassword });
   if (error || !data.user) throw new Error(error?.message ?? 'Sign in failed.');
   return requireDriver(client, data.user.id);
 }
